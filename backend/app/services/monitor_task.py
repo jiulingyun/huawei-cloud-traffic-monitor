@@ -9,8 +9,11 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.services.scheduler import monitor_scheduler
-from app.models.models import MonitorConfig, MonitorLog
+from app.models.config import MonitorConfig
+from app.models.monitor_log import MonitorLog
 from app.services.huawei_cloud import client_manager, TrafficService, ECSService
+from app.services.monitor_logic import monitor_logic
+from app.core.database import get_db
 
 
 class MonitorTaskManager:
@@ -123,36 +126,60 @@ class MonitorTaskManager:
                 threshold=traffic_threshold
             )
             
-            # 记录监控日志
-            log_data = {
-                'config_id': config_id,
-                'check_time': datetime.now(),
-                'remaining_traffic': remaining_traffic,
-                'threshold': traffic_threshold,
-                'is_below_threshold': is_below_threshold,
-                'check_result': 'below_threshold' if is_below_threshold else 'normal'
-            }
+            # 使用监控逻辑判断
+            is_below, result_desc = monitor_logic.check_traffic_threshold(
+                remaining_traffic=remaining_traffic,
+                threshold=traffic_threshold
+            )
             
             logger.info(
                 f"监控检查完成: remaining={remaining_traffic}GB, "
                 f"threshold={traffic_threshold}GB, "
-                f"is_below={is_below_threshold}"
+                f"is_below={is_below}"
             )
             
-            # TODO: 保存监控日志到数据库
-            # TODO: 如果流量低于阈值，触发关机逻辑
+            # 保存监控日志到数据库
+            db = next(get_db())
+            try:
+                monitor_logic.create_monitor_log(
+                    db=db,
+                    config_id=config_id,
+                    remaining_traffic=remaining_traffic,
+                    threshold=traffic_threshold,
+                    is_below_threshold=is_below,
+                    check_result=result_desc
+                )
+            finally:
+                db.close()
             
-            if is_below_threshold:
+            # 如果流量低于阈值，触发关机逻辑
+            if is_below:
                 logger.warning(
                     f"流量低于阈值！config_id={config_id}, "
                     f"remaining={remaining_traffic}GB, "
                     f"threshold={traffic_threshold}GB"
                 )
-                # TODO: 调用关机服务
+                # TODO: 调用关机服务（将在下一个里程碑实现）
             
         except Exception as e:
             logger.error(f"执行监控任务失败: config_id={config_id}, error={e}")
-            # TODO: 记录错误日志到数据库
+            
+            # 记录错误日志到数据库
+            db = next(get_db())
+            try:
+                monitor_logic.create_monitor_log(
+                    db=db,
+                    config_id=config_id,
+                    remaining_traffic=0,
+                    threshold=traffic_threshold,
+                    is_below_threshold=False,
+                    check_result="error",
+                    error_message=str(e)
+                )
+            except:
+                pass
+            finally:
+                db.close()
     
     def remove_monitor_task(self, config_id: int) -> bool:
         """
