@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 """
 测试流量包查询服务
+
+使用方法：
+1. 离线测试（默认）：
+   python test_traffic_service.py
+
+2. 真实联调：
+   export HUAWEI_AK="your_access_key"
+   export HUAWEI_SK="your_secret_key"
+   export HUAWEI_REGION="cn-north-4"  # 可选，默认 cn-north-4
+   export TRAFFIC_RESOURCE_IDS="fr-xxx,fr-yyy"  # 逗号分隔的流量包ID
+   python test_traffic_service.py --real
 """
 import sys
 import os
+import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -207,16 +219,43 @@ def test_threshold_check():
 
 
 if __name__ == "__main__":
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='流量包查询服务测试')
+    parser.add_argument(
+        '--real',
+        action='store_true',
+        help='启用真实 API 调用测试（需要配置环境变量）'
+    )
+    args = parser.parse_args()
+    
     try:
-        test_traffic_package_model()
-        test_traffic_service_init()
-        test_parse_response()
-        test_traffic_summary()
-        test_threshold_check()
-        
-        print("=" * 50)
-        print("🎉 所有测试通过！")
-        print("=" * 50)
+        if args.real:
+            # 真实 API 调用模式
+            print("\n" + "=" * 50)
+            print("🚀 真实 API 调用模式")
+            print("=" * 50 + "\n")
+            
+            success = test_real_api_call()
+            
+            if not success:
+                sys.exit(1)
+        else:
+            # 离线测试模式（默认）
+            print("\n" + "=" * 50)
+            print("🧪 离线测试模式（模拟数据）")
+            print("=" * 50 + "\n")
+            
+            test_traffic_package_model()
+            test_traffic_service_init()
+            test_parse_response()
+            test_traffic_summary()
+            test_threshold_check()
+            
+            print("=" * 50)
+            print("🎉 所有离线测试通过！")
+            print("=" * 50)
+            print("\n💡 提示：使用 --real 参数进行真实 API 调用测试")
+            print("   详见脚本顶部的使用说明\n")
         
     except Exception as e:
         print(f"\n❌ 测试失败: {e}")
