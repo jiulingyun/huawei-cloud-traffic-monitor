@@ -104,7 +104,7 @@
         <el-form-item label="Access Key" prop="ak">
           <el-input
             v-model="formData.ak"
-            placeholder="请输入 Access Key"
+            :placeholder="isEdit ? '留空则不修改' : '请输入 Access Key'"
             clearable
             show-password
           />
@@ -112,7 +112,7 @@
         <el-form-item label="Secret Key" prop="sk">
           <el-input
             v-model="formData.sk"
-            placeholder="请输入 Secret Key"
+            :placeholder="isEdit ? '留空则不修改' : '请输入 Secret Key'"
             clearable
             show-password
           />
@@ -179,24 +179,32 @@ const formData = reactive({
   description: ''
 })
 
-// 表单验证规则
-const formRules = {
+// 表单验证规则（动态生成）
+const formRules = computed(() => ({
   name: [
     { required: true, message: '请输入账户名称', trigger: 'blur' },
     { min: 2, max: 100, message: '长度在 2 到 100 个字符', trigger: 'blur' }
   ],
-  ak: [
-    { required: true, message: '请输入 Access Key', trigger: 'blur' },
-    { min: 10, message: 'Access Key 长度不能少于 10 个字符', trigger: 'blur' }
-  ],
-  sk: [
-    { required: true, message: '请输入 Secret Key', trigger: 'blur' },
-    { min: 10, message: 'Secret Key 长度不能少于 10 个字符', trigger: 'blur' }
-  ],
+  ak: isEdit.value
+    ? [
+        { min: 10, message: 'Access Key 长度不能少于 10 个字符', trigger: 'blur' }
+      ]
+    : [
+        { required: true, message: '请输入 Access Key', trigger: 'blur' },
+        { min: 10, message: 'Access Key 长度不能少于 10 个字符', trigger: 'blur' }
+      ],
+  sk: isEdit.value
+    ? [
+        { min: 10, message: 'Secret Key 长度不能少于 10 个字符', trigger: 'blur' }
+      ]
+    : [
+        { required: true, message: '请输入 Secret Key', trigger: 'blur' },
+        { min: 10, message: 'Secret Key 长度不能少于 10 个字符', trigger: 'blur' }
+      ],
   region: [
     { required: true, message: '请选择区域', trigger: 'change' }
   ]
-}
+}))
 
 // 过滤后的账户列表
 const filteredAccounts = computed(() => {
