@@ -95,6 +95,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/store/app'
 import { useUserStore } from '@/store/user'
 import { ElMessage } from 'element-plus'
+import { logout as logoutApi } from '@/api/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -123,11 +124,20 @@ const currentRoute = computed(() => {
 })
 
 // 处理用户操作
-const handleCommand = (command) => {
+const handleCommand = async (command) => {
   if (command === 'logout') {
-    userStore.logout()
-    ElMessage.success('已退出登录')
-    router.push('/login')
+    try {
+      // 调用登出API
+      await logoutApi()
+      userStore.logout()
+      ElMessage.success('已退出登录')
+      router.push('/login')
+    } catch (error) {
+      console.error('登出失败:', error)
+      // 即使 API 调用失败，也清除本地状态
+      userStore.logout()
+      router.push('/login')
+    }
   } else if (command === 'profile') {
     // 跳转到个人信息页面
     ElMessage.info('个人信息功能开发中')
