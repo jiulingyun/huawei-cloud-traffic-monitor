@@ -378,10 +378,16 @@ const accountForm = reactive({
   retry_times: 3
 })
 
-// 可选择的账户（排除已配置的）
+// 可选择的账户（排除已配置的，且只显示启用的账户）
 const availableAccounts = computed(() => {
   const configuredIds = accountConfigs.value.map(c => c.account_id)
-  return accounts.value.filter(a => !configuredIds.includes(a.id) || a.id === accountForm.account_id)
+  return accounts.value.filter(a => {
+    // 编辑模式下，当前账户也要显示
+    const isCurrentAccount = a.id === accountForm.account_id
+    // 新增模式下，排除已配置的账户，且只显示启用的账户
+    const isAvailable = !configuredIds.includes(a.id) && a.is_enabled
+    return isCurrentAccount || isAvailable
+  })
 })
 
 // 表单验证规则
