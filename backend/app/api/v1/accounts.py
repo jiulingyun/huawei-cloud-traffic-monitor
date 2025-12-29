@@ -257,3 +257,66 @@ async def verify_account(account_id: int, db: Session = Depends(get_db)):
         "is_valid": is_valid,
         "message": message
     }
+
+
+@router.post("/{account_id}/test")
+async def test_account_connection(account_id: int, db: Session = Depends(get_db)):
+    """
+    测试账户连接
+    
+    调用华为云 API 测试 AK/SK 是否有效
+    
+    - **account_id**: 账户 ID
+    """
+    from app.services.huawei_cloud.client import HuaweiCloudClient, HuaweiCloudAPIException
+    from app.services.huawei_cloud.traffic_service import TrafficPackageService
+    
+    # 获取账户信息
+    account = account_service.get_account(db=db, account_id=account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="账户不存在")
+    
+    try:
+        # 创建华为云客户端
+        client = HuaweiCloudClient(
+            ak=account.ak,
+            sk=account.sk,
+            region=account.region
+        )
+        
+        # 尝试获取项目 ID（验证凭证是否有效）
+        project_id = client.get_project_id()
+        
+        if not project_id:
+            return success_response(
+                data={
+                    "success": False,
+                    "message": "无法获取项目 ID，请检查 AK/SK 是否正确"
+                }
+            )
+        
+        # 尝试查询流量包（验证 API 访问权限）
+        traffic_service = TrafficPackageService(client=client, project_id=project_id)
+        packages = traffic_service.list_traffic_packages()
+        
+        return success_response(
+            data={
+                "success": True,
+                "message": f"连接成功！区域: {account.region}, 项目 ID: {project_id}, 流量包数量: {len(packages)}"
+            }
+        )
+        
+    except HuaweiCloudAPIException as e:
+        return success_response(
+            data={
+                "success": False,
+                "message": f"连接失败: {str(e)}"
+            }
+        )
+    except Exception as e:
+        return success_response(
+            data={
+                "success": False,
+                "message": f"测试连接失败: {str(e)}"
+            }
+        )

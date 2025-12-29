@@ -46,7 +46,7 @@
             {{ formatDate(scope.row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="360" fixed="right">
           <template #default="scope">
             <el-button
               type="primary"
@@ -55,6 +55,14 @@
               @click="handleEdit(scope.row)"
             >
               编辑
+            </el-button>
+            <el-button
+              type="info"
+              size="small"
+              :loading="testingId === scope.row.id"
+              @click="handleTestConnection(scope.row)"
+            >
+              测试连接
             </el-button>
             <el-button
               v-if="scope.row.is_enabled"
@@ -156,12 +164,14 @@ import {
   updateAccount,
   deleteAccount,
   enableAccount,
-  disableAccount
+  disableAccount,
+  testAccountConnection
 } from '@/api/accounts'
 
 // 响应式数据
 const loading = ref(false)
 const submitting = ref(false)
+const testingId = ref(null)
 const searchKeyword = ref('')
 const accounts = ref([])
 const dialogVisible = ref(false)
@@ -283,6 +293,33 @@ const handleToggleStatus = async (row) => {
       console.error(`${action}账户失败:`, error)
       ElMessage.error(`${action}失败`)
     }
+  }
+}
+
+// 测试连接
+const handleTestConnection = async (row) => {
+  testingId.value = row.id
+  try {
+    const result = await testAccountConnection(row.id)
+    
+    if (result.success) {
+      ElMessage({
+        message: result.message,
+        type: 'success',
+        duration: 5000
+      })
+    } else {
+      ElMessage({
+        message: result.message,
+        type: 'error',
+        duration: 5000
+      })
+    }
+  } catch (error) {
+    console.error('测试连接失败:', error)
+    ElMessage.error('测试连接失败')
+  } finally {
+    testingId.value = null
   }
 }
 
