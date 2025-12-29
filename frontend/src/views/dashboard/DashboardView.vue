@@ -121,16 +121,16 @@
             <span>快速操作</span>
           </template>
           <div class="quick-actions">
-            <el-button type="primary" :icon="Plus" @click="$router.push('/accounts')" style="width: 100%; margin-bottom: 12px">
+            <el-button type="primary" :icon="Plus" @click="$router.push('/accounts')" class="action-btn">
               添加账户
             </el-button>
-            <el-button type="success" :icon="Setting" @click="$router.push('/configs')" style="width: 100%; margin-bottom: 12px">
+            <el-button type="success" :icon="Setting" @click="$router.push('/configs')" class="action-btn">
               配置监控
             </el-button>
-            <el-button type="info" :icon="View" @click="$router.push('/servers')" style="width: 100%; margin-bottom: 12px">
+            <el-button type="info" :icon="View" @click="$router.push('/servers')" class="action-btn">
               查看服务器
             </el-button>
-            <el-button type="warning" :icon="Document" @click="$router.push('/logs')" style="width: 100%">
+            <el-button type="warning" :icon="Document" @click="$router.push('/logs')" class="action-btn">
               查看日志
             </el-button>
           </div>
@@ -322,6 +322,15 @@ const loadDashboardData = async () => {
 
 .quick-actions {
   padding: 8px 0;
+}
+
+.action-btn {
+  width: 100%;
+  margin: 0 0 12px 0 !important;
+}
+
+.action-btn:last-child {
+  margin-bottom: 0 !important;
 }
 
 /* 通知卡片 */
