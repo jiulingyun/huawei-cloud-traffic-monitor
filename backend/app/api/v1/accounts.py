@@ -269,7 +269,6 @@ async def test_account_connection(account_id: int, db: Session = Depends(get_db)
     - **account_id**: 账户 ID
     """
     from app.services.huawei_cloud.client import HuaweiCloudClient, HuaweiCloudAPIException
-    from app.services.huawei_cloud.traffic_service import TrafficPackageService
     
     # 获取账户信息
     account = account_service.get_account(db=db, account_id=account_id)
@@ -295,14 +294,10 @@ async def test_account_connection(account_id: int, db: Session = Depends(get_db)
                 }
             )
         
-        # 尝试查询流量包（验证 API 访问权限）
-        traffic_service = TrafficPackageService(client=client, project_id=project_id)
-        packages = traffic_service.list_traffic_packages()
-        
         return success_response(
             data={
                 "success": True,
-                "message": f"连接成功！区域: {account.region}, 项目 ID: {project_id}, 流量包数量: {len(packages)}"
+                "message": f"连接成功！区域: {account.region}, 项目 ID: {project_id}"
             }
         )
         
