@@ -186,47 +186,65 @@ import {
   Plus, Setting, View, Document 
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import {
+  getDashboardStats,
+  getDashboardAccounts,
+  getDashboardNotifications,
+  getSystemInfo
+} from '@/api/dashboard'
 
 // 统计数据
 const stats = reactive({
-  accounts: 3,
-  servers: 12,
-  alerts: 2,
-  monitoring: 3
+  accounts: 0,
+  servers: 0,
+  alerts: 0,
+  monitoring: 0
 })
 
 // 流量周期
 const trafficPeriod = ref('7d')
 
 // 账户列表
-const accountList = ref([
-  { name: '生产环境', region: 'cn-north-4', servers: 5, traffic: 45.2, status: 'active' },
-  { name: '测试环境', region: 'cn-south-1', servers: 3, traffic: 12.8, status: 'active' },
-  { name: '开发环境', region: 'cn-east-3', servers: 4, traffic: 8.5, status: 'active' }
-])
+const accountList = ref([])
 
 // 通知列表
-const notifications = ref([
-  { id: 1, type: 'warning', time: '10 分钟前', content: '生产环境流量使用超过 80%' },
-  { id: 2, type: 'success', time: '1 小时前', content: '测试环境服务器自动关机成功' },
-  { id: 3, type: 'info', time: '3 小时前', content: '监控任务执行成功' }
-])
+const notifications = ref([])
+
+// 加载状态
+const loading = ref(false)
 
 // 组件加载时
 onMounted(() => {
-  // TODO: 加载真实数据
   loadDashboardData()
 })
 
 // 加载仪表板数据
 const loadDashboardData = async () => {
+  loading.value = true
   try {
-    // TODO: 调用真实 API
-    // const response = await getDashboardStats()
-    // stats.accounts = response.accounts
-    // ...
+    // 并发加载所有数据
+    const [statsData, accountsData, notificationsData] = await Promise.all([
+      getDashboardStats(),
+      getDashboardAccounts({ limit: 10 }),
+      getDashboardNotifications({ limit: 10 })
+    ])
+
+    // 更新统计数据
+    stats.accounts = statsData.accounts || 0
+    stats.servers = statsData.servers || 0
+    stats.alerts = statsData.alerts || 0
+    stats.monitoring = statsData.monitoring || 0
+
+    // 更新账户列表
+    accountList.value = accountsData || []
+
+    // 更新通知列表
+    notifications.value = notificationsData || []
   } catch (error) {
     console.error('加载仪表板数据失败:', error)
+    ElMessage.error('加载仪表板数据失败')
+  } finally {
+    loading.value = false
   }
 }
 </script>
