@@ -278,8 +278,8 @@ async def test_account_connection(account_id: int, db: Session = Depends(get_db)
     try:
         # 创建华为云客户端
         client = HuaweiCloudClient(
-            ak=account.ak,
-            sk=account.sk,
+            access_key=account.ak,
+            secret_key=account.sk,
             region=account.region
         )
         
