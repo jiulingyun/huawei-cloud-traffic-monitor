@@ -80,6 +80,7 @@ class FeishuWebhookClient:
         }
         
         logger.info(f"发送飞书消息: type={msg_type.value}")
+        logger.debug(f"Payload: {payload}")
         
         # 重试机制
         last_error = None
@@ -177,7 +178,50 @@ class FeishuWebhookClient:
         Returns:
             响应结果
         """
-        return self.send_message(MessageType.INTERACTIVE, {"card": card})
+        # 注意：飞书卡片消息的 payload 格式为：{"msg_type": "interactive", "card": {...}}
+        # 但是 send_message 会把 content 嵌套到 {"msg_type": ..., "content": ...}
+        # 所以这里需要特殊处理
+        payload = {
+            "msg_type": MessageType.INTERACTIVE.value,
+            "card": card
+        }
+        
+        logger.info(f"发送飞书消息: type=interactive")
+        logger.debug(f"Card payload: {payload}")
+        
+        # 直接发送，不通过 send_message
+        last_error = None
+        for attempt in range(self.retry_times):
+            try:
+                response = requests.post(
+                    self.webhook_url,
+                    json=payload,
+                    timeout=self.timeout
+                )
+                
+                result = response.json()
+                
+                if result.get('code') == 0:
+                    logger.info("飞书消息发送成功")
+                    return result
+                else:
+                    error_msg = result.get('msg', '未知错误')
+                    logger.error(f"飞书消息发送失败: code={result.get('code')}, msg={error_msg}")
+                    raise FeishuException(f"发送失败: {error_msg}")
+                    
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                logger.warning(f"飞书消息发送失败 (尝试 {attempt + 1}/{self.retry_times}): {e}")
+                
+                if attempt < self.retry_times - 1:
+                    time.sleep(self.retry_delay)
+                    continue
+                    
+            except Exception as e:
+                logger.error(f"飞书消息发送异常: {e}")
+                raise FeishuException(f"发送异常: {e}")
+        
+        raise FeishuException(f"发送失败（已重试 {self.retry_times} 次）: {last_error}")
     
     def create_text_card(
         self,
