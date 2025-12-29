@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     # 加密密钥
     ENCRYPTION_KEY: Optional[str] = None
     
+    # JWT 配置
+    JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 1440  # 24小时
+    
+    # 管理员配置
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD: str = "admin123"
+    
     # 监控配置
     DEFAULT_CHECK_INTERVAL: int = 5  # 分钟
     DEFAULT_TRAFFIC_THRESHOLD: float = 10.0  # GB
