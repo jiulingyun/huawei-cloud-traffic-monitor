@@ -40,6 +40,16 @@ request.interceptors.response.use(
       return Promise.reject(new Error(res.message || res.msg || '请求失败'))
     }
 
+    // 如果响应包含 success 字段，检查是否成功并返回 data
+    if (res.success !== undefined) {
+      if (!res.success) {
+        ElMessage.error(res.message || '请求失败')
+        return Promise.reject(new Error(res.message || '请求失败'))
+      }
+      // 返回 data 字段
+      return res.data
+    }
+
     return res
   },
   (error) => {
