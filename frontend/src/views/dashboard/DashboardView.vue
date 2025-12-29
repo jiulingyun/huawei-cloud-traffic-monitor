@@ -1,14 +1,234 @@
 <template>
   <div class="dashboard">
-    <el-card class="welcome-card">
-      <h2>欢迎使用华为云服务器流量监控系统</h2>
-      <p>系统架构搭建完成，仪表板功能开发中...</p>
-    </el-card>
+    <!-- 统计卡片 -->
+    <el-row :gutter="20" class="stats-row">
+      <el-col :xs="24" :sm="12" :lg="6">
+        <el-card class="stat-card" shadow="hover">
+          <div class="stat-content">
+            <div class="stat-icon" style="background: #ecf5ff">
+              <el-icon :size="32" color="#409EFF"><User /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.accounts }}</div>
+              <div class="stat-label">账户数量</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+
+      <el-col :xs="24" :sm="12" :lg="6">
+        <el-card class="stat-card" shadow="hover">
+          <div class="stat-content">
+            <div class="stat-icon" style="background: #f0f9ff">
+              <el-icon :size="32" color="#67C23A"><Cpu /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.servers }}</div>
+              <div class="stat-label">服务器数量</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+
+      <el-col :xs="24" :sm="12" :lg="6">
+        <el-card class="stat-card" shadow="hover">
+          <div class="stat-content">
+            <div class="stat-icon" style="background: #fef0f0">
+              <el-icon :size="32" color="#F56C6C"><Warning /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.alerts }}</div>
+              <div class="stat-label">今日告警</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+
+      <el-col :xs="24" :sm="12" :lg="6">
+        <el-card class="stat-card" shadow="hover">
+          <div class="stat-content">
+            <div class="stat-icon" style="background: #f4f4f5">
+              <el-icon :size="32" color="#909399"><Monitor /></el-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.monitoring }}</div>
+              <div class="stat-label">监控中</div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <!-- 主要内容 -->
+    <el-row :gutter="20" class="content-row">
+      <!-- 左侧列 -->
+      <el-col :xs="24" :lg="16">
+        <!-- 流量趋势 -->
+        <el-card class="chart-card" shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <span>流量使用趋势</span>
+              <el-radio-group v-model="trafficPeriod" size="small">
+                <el-radio-button label="7d">7天</el-radio-button>
+                <el-radio-button label="30d">30天</el-radio-button>
+              </el-radio-group>
+            </div>
+          </template>
+          <div class="chart-container">
+            <div class="chart-placeholder">
+              <el-icon :size="48" color="#909399"><TrendCharts /></el-icon>
+              <p>流量趋势图表</p>
+              <el-tag type="info" size="small">图表组件将在后续集成</el-tag>
+            </div>
+          </div>
+        </el-card>
+
+        <!-- 账户状态 -->
+        <el-card class="account-card" shadow="hover">
+          <template #header>
+            <div class="card-header">
+              <span>账户状态</span>
+              <el-button type="primary" size="small" @click="$router.push('/accounts')">
+                管理账户
+              </el-button>
+            </div>
+          </template>
+          <el-table :data="accountList" style="width: 100%" :show-header="true">
+            <el-table-column prop="name" label="账户名称" width="180" />
+            <el-table-column prop="region" label="区域" width="150" />
+            <el-table-column prop="servers" label="服务器" width="100" />
+            <el-table-column prop="traffic" label="当月流量" width="120">
+              <template #default="scope">
+                <span>{{ scope.row.traffic }} GB</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态">
+              <template #default="scope">
+                <el-tag :type="scope.row.status === 'active' ? 'success' : 'info'" size="small">
+                  {{ scope.row.status === 'active' ? '正常' : '禁用' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-col>
+
+      <!-- 右侧列 -->
+      <el-col :xs="24" :lg="8">
+        <!-- 快速操作 -->
+        <el-card class="quick-actions-card" shadow="hover">
+          <template #header>
+            <span>快速操作</span>
+          </template>
+          <div class="quick-actions">
+            <el-button type="primary" :icon="Plus" @click="$router.push('/accounts')" style="width: 100%; margin-bottom: 12px">
+              添加账户
+            </el-button>
+            <el-button type="success" :icon="Setting" @click="$router.push('/configs')" style="width: 100%; margin-bottom: 12px">
+              配置监控
+            </el-button>
+            <el-button type="info" :icon="View" @click="$router.push('/servers')" style="width: 100%; margin-bottom: 12px">
+              查看服务器
+            </el-button>
+            <el-button type="warning" :icon="Document" @click="$router.push('/logs')" style="width: 100%">
+              查看日志
+            </el-button>
+          </div>
+        </el-card>
+
+        <!-- 最近通知 -->
+        <el-card class="notifications-card" shadow="hover">
+          <template #header>
+            <span>最近通知</span>
+          </template>
+          <el-timeline>
+            <el-timeline-item
+              v-for="item in notifications"
+              :key="item.id"
+              :timestamp="item.time"
+              :type="item.type"
+            >
+              {{ item.content }}
+            </el-timeline-item>
+          </el-timeline>
+          <el-empty v-if="notifications.length === 0" description="暂无通知" :image-size="60" />
+        </el-card>
+
+        <!-- 系统信息 -->
+        <el-card class="system-info-card" shadow="hover">
+          <template #header>
+            <span>系统信息</span>
+          </template>
+          <div class="system-info">
+            <div class="info-item">
+              <span class="info-label">系统版本</span>
+              <span class="info-value">v1.0.0</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">监控状态</span>
+              <el-tag type="success" size="small">运行中</el-tag>
+            </div>
+            <div class="info-item">
+              <span class="info-label">上次检查</span>
+              <span class="info-value">5 分钟前</span>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
 <script setup>
-// Dashboard placeholder
+import { ref, reactive, onMounted } from 'vue'
+import { 
+  User, Cpu, Warning, Monitor, TrendCharts, 
+  Plus, Setting, View, Document 
+} from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+
+// 统计数据
+const stats = reactive({
+  accounts: 3,
+  servers: 12,
+  alerts: 2,
+  monitoring: 3
+})
+
+// 流量周期
+const trafficPeriod = ref('7d')
+
+// 账户列表
+const accountList = ref([
+  { name: '生产环境', region: 'cn-north-4', servers: 5, traffic: 45.2, status: 'active' },
+  { name: '测试环境', region: 'cn-south-1', servers: 3, traffic: 12.8, status: 'active' },
+  { name: '开发环境', region: 'cn-east-3', servers: 4, traffic: 8.5, status: 'active' }
+])
+
+// 通知列表
+const notifications = ref([
+  { id: 1, type: 'warning', time: '10 分钟前', content: '生产环境流量使用超过 80%' },
+  { id: 2, type: 'success', time: '1 小时前', content: '测试环境服务器自动关机成功' },
+  { id: 3, type: 'info', time: '3 小时前', content: '监控任务执行成功' }
+])
+
+// 组件加载时
+onMounted(() => {
+  // TODO: 加载真实数据
+  loadDashboardData()
+})
+
+// 加载仪表板数据
+const loadDashboardData = async () => {
+  try {
+    // TODO: 调用真实 API
+    // const response = await getDashboardStats()
+    // stats.accounts = response.accounts
+    // ...
+  } catch (error) {
+    console.error('加载仪表板数据失败:', error)
+  }
+}
 </script>
 
 <style scoped>
@@ -16,17 +236,151 @@
   width: 100%;
 }
 
-.welcome-card {
-  text-align: center;
-  padding: 40px;
+/* 统计卡片 */
+.stats-row {
+  margin-bottom: 20px;
 }
 
-.welcome-card h2 {
-  margin-bottom: 16px;
+.stat-card {
+  margin-bottom: 20px;
+}
+
+.stat-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.stat-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-info {
+  flex: 1;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 600;
   color: #303133;
+  line-height: 1;
+  margin-bottom: 8px;
 }
 
-.welcome-card p {
+.stat-label {
+  font-size: 14px;
+  color: #909399;
+}
+
+/* 内容区域 */
+.content-row {
+  margin-bottom: 20px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 图表卡片 */
+.chart-card {
+  margin-bottom: 20px;
+}
+
+.chart-container {
+  height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-placeholder {
+  text-align: center;
+  color: #909399;
+}
+
+.chart-placeholder p {
+  margin: 16px 0 12px 0;
+  font-size: 16px;
+}
+
+/* 账户卡片 */
+.account-card {
+  margin-bottom: 20px;
+}
+
+/* 快速操作卡片 */
+.quick-actions-card {
+  margin-bottom: 20px;
+}
+
+.quick-actions {
+  padding: 8px 0;
+}
+
+/* 通知卡片 */
+.notifications-card {
+  margin-bottom: 20px;
+}
+
+.notifications-card :deep(.el-timeline) {
+  padding-left: 0;
+}
+
+/* 系统信息卡片 */
+.system-info-card {
+  margin-bottom: 20px;
+}
+
+.system-info {
+  padding: 8px 0;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.info-item:last-child {
+  border-bottom: none;
+}
+
+.info-label {
   color: #606266;
+  font-size: 14px;
+}
+
+.info-value {
+  color: #303133;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .stat-card {
+    margin-bottom: 12px;
+  }
+  
+  .content-row {
+    margin-bottom: 12px;
+  }
+  
+  .chart-card,
+  .account-card,
+  .quick-actions-card,
+  .notifications-card,
+  .system-info-card {
+    margin-bottom: 12px;
+  }
 }
 </style>
