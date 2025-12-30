@@ -12,15 +12,20 @@ echo "Updating VERSION -> $NEW_VERSION"
 echo "$NEW_VERSION" > VERSION
 
 echo "Updating backend/app/__init__.py"
+export NEW_VERSION
 python - <<PY
+import os, re
 from pathlib import Path
-import re
+
 p = Path("backend/app/__init__.py")
 text = p.read_text(encoding="utf-8")
+v = os.environ.get("NEW_VERSION", "")
 if re.search(r'__version__\s*=.*', text):
-    text = re.sub(r'__version__\s*=.*', '__version__ = "{}"'.format("${NEW_VERSION}"), text)
+    text = re.sub(r'__version__\s*=.*', '__version__ = "{}"'.format(v), text)
 else:
-    text = text + "\n__version__ = \"{}\"".format("${NEW_VERSION}")
+    if not text.endswith("\n"):
+        text += "\n"
+    text += '__version__ = "{}"'.format(v)
 p.write_text(text, encoding="utf-8")
 print("done")
 PY
