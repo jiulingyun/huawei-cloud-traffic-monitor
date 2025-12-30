@@ -120,6 +120,7 @@ from app.services.huawei_cloud import (
     TrafficService,
     ECSService
 )
+from app.services.huawei_cloud.bss_client import HuaweiCloudBSSClient
 from app.services.huawei_cloud.shutdown_service import ShutdownService, ShutdownType
 from app.services.huawei_cloud.job_service import JobService
 from app.services.feishu import FeishuWebhookClient, FeishuNotificationService
@@ -234,7 +235,10 @@ class MonitorWorkflowExecutor:
             
             # 步骤 2: 查询流量包信息（带重试）
             logger.info("步骤 2: 查询流量包信息")
-            traffic_service = TrafficService(client)
+            # TrafficService 需要一个 BSS 客户端用于计费/流量相关 API，
+            # client_manager 返回的是通用的 ECS 客户端（用于 ECS 操作），因此这里需要用 AK/SK 创建 BSS 客户端
+            bss_client = HuaweiCloudBSSClient(ak, sk, is_intl)
+            traffic_service = TrafficService(bss_client)
             
             # 使用重试执行器查询流量（使用自动发现的汇总方法）
             # get_traffic_summary 需要 resource_ids 参数 —— 使用 get_all_traffic_summary 以自动发现并汇总
