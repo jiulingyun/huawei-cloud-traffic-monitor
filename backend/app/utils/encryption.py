@@ -158,5 +158,21 @@ class EncryptionService:
         return data[:show_chars] + "*" * (len(data) - show_chars)
 
 
-# 创建全局加密服务实例
-encryption_service = EncryptionService()
+# 延迟创建全局加密服务实例，确保 .env 文件已被加载
+def get_encryption_service() -> EncryptionService:
+    """获取加密服务实例"""
+    global _encryption_service_instance
+    if '_encryption_service_instance' not in globals():
+        # 从 settings 加载 ENCRYPTION_KEY
+        try:
+            from app.core.config import settings
+            key = settings.ENCRYPTION_KEY
+        except:
+            # 如果无法加载 settings，尝试直接从环境变量获取
+            key = os.getenv("ENCRYPTION_KEY")
+        
+        _encryption_service_instance = EncryptionService(key=key)
+    return _encryption_service_instance
+
+# 为了向后兼容，保留 encryption_service 名称
+encryption_service = get_encryption_service()
