@@ -2,7 +2,7 @@
 API v1 路由汇总
 """
 from fastapi import APIRouter
-from app.api.v1 import accounts, servers, configs, monitor, auth, dashboard, traffic
+from app.api.v1 import accounts, servers, configs, monitor, auth, dashboard, traffic, logs
 
 api_router = APIRouter()
 
@@ -14,3 +14,4 @@ api_router.include_router(servers.router)
 api_router.include_router(traffic.router)
 api_router.include_router(configs.router)
 api_router.include_router(monitor.router)
+api_router.include_router(logs.router)

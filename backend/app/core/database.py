@@ -41,7 +41,7 @@ def init_db():
     创建所有表
     """
     # 导入所有模型，确保它们被注册到 Base
-    from app.models import account, server, config, monitor_log, shutdown_log, notification_log
+    from app.models import account, server, config, monitor_log, shutdown_log, notification_log, operation_log
     
     # 创建数据目录
     os.makedirs("./data", exist_ok=True)

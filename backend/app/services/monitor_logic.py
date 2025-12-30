@@ -82,11 +82,15 @@ class MonitorLogic:
     @staticmethod
     def create_monitor_log(
         db: Any,  # Session 实例
-        config_id: int,
+        account_id: int,
         remaining_traffic: float,
         threshold: float,
         is_below_threshold: bool,
         check_result: str,
+        traffic_total: Optional[float] = None,
+        traffic_used: Optional[float] = None,
+        usage_percentage: Optional[float] = None,
+        server_id: Optional[int] = None,
         error_message: Optional[str] = None
     ) -> Any:
         """
@@ -94,23 +98,29 @@ class MonitorLogic:
         
         Args:
             db: 数据库会话
-            config_id: 监控配置 ID
+            account_id: 账户 ID
             remaining_traffic: 剩余流量
             threshold: 阈值
             is_below_threshold: 是否低于阈值
             check_result: 检查结果描述
+            traffic_total: 总流量
+            traffic_used: 已用流量
+            usage_percentage: 使用百分比
+            server_id: 服务器 ID
             error_message: 错误信息（可选）
             
         Returns:
             创建的监控日志
         """
         try:
-            # 使用字典代替模型，实际使用时需要传入 MonitorLog 模型
             from app.models.monitor_log import MonitorLog
             log = MonitorLog(
-                account_id=1,  # TODO: 从 config 获取
-                server_id=1,  # TODO: 从 config 获取
+                account_id=account_id,
+                server_id=server_id or 0,  # 如果没有指定服务器，使用 0 表示账户级别监控
                 traffic_remaining=remaining_traffic,
+                traffic_total=traffic_total,
+                traffic_used=traffic_used,
+                usage_percentage=usage_percentage,
                 threshold=threshold,
                 is_below_threshold=is_below_threshold,
                 check_time=datetime.now(),
@@ -123,7 +133,7 @@ class MonitorLogic:
             
             logger.info(
                 f"监控日志已保存: log_id={log.id}, "
-                f"config_id={config_id}, "
+                f"account_id={account_id}, "
                 f"is_below_threshold={is_below_threshold}"
             )
             

@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.response import success_response
 from app.services.account_service import AccountService
 from app.services.huawei_cloud.flexusl_service import FlexusLService, FlexusLException
+from app.services.operation_log_service import operation_log_service, OperationLogService
 from app.utils.encryption import get_encryption_service
 
 router = APIRouter(prefix="/servers", tags=["服务器管理"])
@@ -487,6 +488,16 @@ async def start_server(
     if not account:
         raise HTTPException(status_code=404, detail="账户不存在")
     
+    # 创建操作日志
+    op_log = operation_log_service.create_operation_log(
+        db=db,
+        account_id=account_id,
+        operation_type=OperationLogService.OP_START,
+        target_id=request.server_id,
+        region=request.region,
+        reason="用户手动启动"
+    )
+    
     try:
         encryption_service = get_encryption_service()
         ak = encryption_service.decrypt(account.ak)
@@ -503,6 +514,8 @@ async def start_server(
         result = service.start_server(server_id=request.server_id, region=request.region)
         
         if result.success:
+            # 记录成功
+            operation_log_service.mark_success(db=db, log_id=op_log.id, job_id=result.job_id)
             return success_response(
                 data={
                     'job_id': result.job_id,
@@ -513,6 +526,8 @@ async def start_server(
                 message="启动请求已提交"
             )
         else:
+            # 记录失败
+            operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=result.message)
             return success_response(
                 data=None,
                 message=f"启动失败: {result.message}"
@@ -520,9 +535,11 @@ async def start_server(
         
     except FlexusLException as e:
         logger.error(f"启动云主机失败: {e}")
+        operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=str(e))
         return success_response(data=None, message=f"启动失败: {str(e)}")
     except Exception as e:
         logger.error(f"启动云主机异常: {e}")
+        operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=str(e))
         return success_response(data=None, message=f"启动失败: {str(e)}")
 
 
@@ -548,6 +565,17 @@ async def stop_server(
     if not account:
         raise HTTPException(status_code=404, detail="账户不存在")
     
+    # 创建操作日志
+    op_log = operation_log_service.create_operation_log(
+        db=db,
+        account_id=account_id,
+        operation_type=OperationLogService.OP_STOP,
+        target_id=request.server_id,
+        region=request.region,
+        reason="用户手动关机",
+        extra_data={'action_type': request.action_type}
+    )
+    
     try:
         encryption_service = get_encryption_service()
         ak = encryption_service.decrypt(account.ak)
@@ -568,6 +596,7 @@ async def stop_server(
         )
         
         if result.success:
+            operation_log_service.mark_success(db=db, log_id=op_log.id, job_id=result.job_id)
             return success_response(
                 data={
                     'job_id': result.job_id,
@@ -578,6 +607,7 @@ async def stop_server(
                 message="关机请求已提交"
             )
         else:
+            operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=result.message)
             return success_response(
                 data=None,
                 message=f"关机失败: {result.message}"
@@ -585,9 +615,11 @@ async def stop_server(
         
     except FlexusLException as e:
         logger.error(f"关闭云主机失败: {e}")
+        operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=str(e))
         return success_response(data=None, message=f"关机失败: {str(e)}")
     except Exception as e:
         logger.error(f"关闭云主机异常: {e}")
+        operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=str(e))
         return success_response(data=None, message=f"关机失败: {str(e)}")
 
 
@@ -613,6 +645,17 @@ async def reboot_server(
     if not account:
         raise HTTPException(status_code=404, detail="账户不存在")
     
+    # 创建操作日志
+    op_log = operation_log_service.create_operation_log(
+        db=db,
+        account_id=account_id,
+        operation_type=OperationLogService.OP_REBOOT,
+        target_id=request.server_id,
+        region=request.region,
+        reason="用户手动重启",
+        extra_data={'action_type': request.action_type}
+    )
+    
     try:
         encryption_service = get_encryption_service()
         ak = encryption_service.decrypt(account.ak)
@@ -633,6 +676,7 @@ async def reboot_server(
         )
         
         if result.success:
+            operation_log_service.mark_success(db=db, log_id=op_log.id, job_id=result.job_id)
             return success_response(
                 data={
                     'job_id': result.job_id,
@@ -643,6 +687,7 @@ async def reboot_server(
                 message="重启请求已提交"
             )
         else:
+            operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=result.message)
             return success_response(
                 data=None,
                 message=f"重启失败: {result.message}"
@@ -650,7 +695,9 @@ async def reboot_server(
         
     except FlexusLException as e:
         logger.error(f"重启云主机失败: {e}")
+        operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=str(e))
         return success_response(data=None, message=f"重启失败: {str(e)}")
     except Exception as e:
         logger.error(f"重启云主机异常: {e}")
+        operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=str(e))
         return success_response(data=None, message=f"重启失败: {str(e)}")

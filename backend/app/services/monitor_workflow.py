@@ -124,6 +124,7 @@ from app.services.huawei_cloud.shutdown_service import ShutdownService, Shutdown
 from app.services.huawei_cloud.job_service import JobService
 from app.services.feishu import FeishuWebhookClient, FeishuNotificationService
 from app.services.monitor_logic import monitor_logic
+from app.services.operation_log_service import operation_log_service, OperationLogService
 
 
 class MonitorWorkflowExecutor:
@@ -272,11 +273,14 @@ class MonitorWorkflowExecutor:
             logger.info("步骤 4: 记录监控日志")
             monitor_log = monitor_logic.create_monitor_log(
                 db=db,
-                config_id=config_id,
+                account_id=account_id,
                 remaining_traffic=remaining_traffic,
                 threshold=traffic_threshold,
                 is_below_threshold=is_below_threshold,
-                check_result=check_result
+                check_result=check_result,
+                traffic_total=traffic_summary.get('total_traffic_gb'),
+                traffic_used=traffic_summary.get('total_used_gb'),
+                usage_percentage=usage_percentage
             )
             
             # 步骤 5: 发送流量告警通知（如果使用率超过70%）
@@ -350,9 +354,12 @@ class MonitorWorkflowExecutor:
                     db=db,
                     client=client,
                     project_id=project_id,
+                    account_id=account_id,
                     account_name=account_name,
                     region=region,
-                    retry_times=retry_times
+                    retry_times=retry_times,
+                    remaining_traffic=remaining_traffic,
+                    threshold=traffic_threshold
                 )
                 
                 result['shutdown_executed'] = shutdown_result['success']
@@ -369,7 +376,7 @@ class MonitorWorkflowExecutor:
             try:
                 monitor_logic.create_monitor_log(
                     db=db,
-                    config_id=config_id,
+                    account_id=account_id,
                     remaining_traffic=0,
                     threshold=traffic_threshold,
                     is_below_threshold=False,
@@ -386,9 +393,12 @@ class MonitorWorkflowExecutor:
         db: Session,
         client,
         project_id: str,
+        account_id: int,
         account_name: str,
         region: str,
-        retry_times: int = 3
+        retry_times: int = 3,
+        remaining_traffic: float = 0,
+        threshold: float = 0
     ) -> Dict[str, Any]:
         """
         执行关机工作流
@@ -433,6 +443,21 @@ class MonitorWorkflowExecutor:
             result['servers'] = server_list
             
             logger.info(f"找到 {len(running_servers)} 台运行中的服务器")
+            
+            # 创建操作日志记录（每台服务器一条）
+            op_logs = []
+            for server in running_servers:
+                op_log = operation_log_service.create_operation_log(
+                    db=db,
+                    account_id=account_id,
+                    operation_type=OperationLogService.OP_AUTO_SHUTDOWN,
+                    target_id=server.id,
+                    target_name=server.name,
+                    target_type='server',
+                    region=region,
+                    reason=f"流量不足自动关机: 剩余 {remaining_traffic:.2f}GB < 阈值 {threshold:.2f}GB"
+                )
+                op_logs.append(op_log)
             
             # 2. 发送关机通知
             if self.enable_notifications:
@@ -484,6 +509,14 @@ class MonitorWorkflowExecutor:
                     result['success'] = True
                     result['duration'] = duration
                     
+                    # 更新操作日志状态为成功
+                    for op_log in op_logs:
+                        operation_log_service.mark_success(
+                            db=db,
+                            log_id=op_log.id,
+                            job_id=shutdown_task.job_id
+                        )
+                    
                     # 5. 发送成功通知
                     if self.enable_notifications:
                         try:
@@ -498,6 +531,15 @@ class MonitorWorkflowExecutor:
                 else:
                     logger.error(f"关机任务失败: {job_info.fail_reason}")
                     result['error'] = job_info.fail_reason
+                    
+                    # 更新操作日志状态为失败
+                    for op_log in op_logs:
+                        operation_log_service.mark_failed(
+                            db=db,
+                            log_id=op_log.id,
+                            error_message=job_info.fail_reason or "未知错误",
+                            job_id=shutdown_task.job_id
+                        )
                     
                     # 6. 发送失败通知
                     if self.enable_notifications:
@@ -520,6 +562,18 @@ class MonitorWorkflowExecutor:
         except Exception as e:
             logger.error(f"关机工作流失败: {e}")
             result['error'] = str(e)
+            
+            # 更新操作日志状态为失败
+            if 'op_logs' in locals():
+                for op_log in op_logs:
+                    try:
+                        operation_log_service.mark_failed(
+                            db=db,
+                            log_id=op_log.id,
+                            error_message=str(e)
+                        )
+                    except:
+                        pass
             
             # 发送失败通知
             if self.enable_notifications:

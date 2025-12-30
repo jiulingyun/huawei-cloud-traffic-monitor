@@ -123,7 +123,7 @@
           华为云流量包监控与自动关机系统，支持多账户、自定义配置、飞书通知。
         </el-descriptions-item>
         <el-descriptions-item label="开发者">
-          AI Agent (Warp)
+          羊羊羊（九灵云）
         </el-descriptions-item>
         <el-descriptions-item label="开源协议">
           MIT License
