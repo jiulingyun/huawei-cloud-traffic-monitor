@@ -9,11 +9,16 @@ import os
 # 数据库 URL
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/monitor.db")
 
+# 控制是否在控制台输出 SQL 语句（用于开发环境调试）
+# 在生产环境请将 环境变量 DATABASE_ECHO=false
+_db_echo = os.getenv("DATABASE_ECHO", "True")
+DB_ECHO = str(_db_echo).lower() in ("1", "true", "yes")
+
 # 创建数据库引擎
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
-    echo=True  # 开发环境开启 SQL 日志
+    echo=DB_ECHO
 )
 
 # 创建会话工厂

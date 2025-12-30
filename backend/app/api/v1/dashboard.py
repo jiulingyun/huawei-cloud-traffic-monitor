@@ -175,7 +175,7 @@ async def get_system_info(db: Session = Depends(get_db)):
     last_check = "未运行"
     
     return success_response(data={
-        "version": "v1.0.0",
+        "version": "v1.0.1",
         "monitoring_status": "running",
         "last_check": last_check,
         "config_count": config_count,
