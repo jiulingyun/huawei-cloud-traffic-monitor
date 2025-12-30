@@ -20,6 +20,7 @@ class AccountCreate(BaseModel):
     ak: str = Field(..., description="Access Key", min_length=1)
     sk: str = Field(..., description="Secret Key", min_length=1)
     region: str = Field(default="cn-north-4", description="首选区域（实际会自动发现所有区域）")
+    is_international: bool = Field(default=True, description="是否为国际站账户（True=国际站，False=中国站）")
     description: Optional[str] = Field(None, description="账户描述", max_length=500)
 
 
@@ -29,6 +30,7 @@ class AccountUpdate(BaseModel):
     ak: Optional[str] = Field(None, description="Access Key", min_length=1)
     sk: Optional[str] = Field(None, description="Secret Key", min_length=1)
     region: Optional[str] = Field(None, description="首选区域")
+    is_international: Optional[bool] = Field(None, description="是否为国际站账户")
     description: Optional[str] = Field(None, description="账户描述", max_length=500)
 
 
@@ -38,6 +40,7 @@ class AccountResponse(BaseModel):
     name: str
     region: str
     is_enabled: bool
+    is_international: bool
     description: Optional[str]
     created_at: str
     updated_at: str
@@ -75,6 +78,7 @@ async def list_accounts(
             "name": account.name,
             "region": account.region,
             "is_enabled": account.is_enabled,
+            "is_international": getattr(account, 'is_international', True),
             "description": account.description,
             "created_at": account.created_at.isoformat() if account.created_at else None,
             "updated_at": account.updated_at.isoformat() if account.updated_at else None
@@ -100,6 +104,7 @@ async def get_account(account_id: int, db: Session = Depends(get_db)):
         "name": account.name,
         "region": account.region,
         "is_enabled": account.is_enabled,
+        "is_international": getattr(account, 'is_international', True),
         "description": account.description,
         "created_at": account.created_at.isoformat() if account.created_at else None,
         "updated_at": account.updated_at.isoformat() if account.updated_at else None
@@ -115,6 +120,7 @@ async def create_account(request: AccountCreate, db: Session = Depends(get_db)):
     - **ak**: Access Key
     - **sk**: Secret Key
     - **region**: 区域（默认 cn-north-4）
+    - **is_international**: 是否为国际站账户（默认 True）
     - **description**: 账户描述（可选）
     """
     try:
@@ -124,6 +130,7 @@ async def create_account(request: AccountCreate, db: Session = Depends(get_db)):
             ak=request.ak,
             sk=request.sk,
             region=request.region,
+            is_international=request.is_international,
             description=request.description
         )
         
@@ -132,6 +139,7 @@ async def create_account(request: AccountCreate, db: Session = Depends(get_db)):
             "name": account.name,
             "region": account.region,
             "is_enabled": account.is_enabled,
+            "is_international": getattr(account, 'is_international', True),
             "description": account.description,
             "created_at": account.created_at.isoformat() if account.created_at else None,
             "updated_at": account.updated_at.isoformat() if account.updated_at else None
@@ -155,6 +163,7 @@ async def update_account(
     - **ak**: Access Key（可选）
     - **sk**: Secret Key（可选）
     - **region**: 区域（可选）
+    - **is_international**: 是否为国际站账户（可选）
     - **description**: 账户描述（可选）
     """
     account = account_service.update_account(
@@ -164,6 +173,7 @@ async def update_account(
         ak=request.ak,
         sk=request.sk,
         region=request.region,
+        is_international=request.is_international,
         description=request.description
     )
     
@@ -175,6 +185,7 @@ async def update_account(
         "name": account.name,
         "region": account.region,
         "is_enabled": account.is_enabled,
+        "is_international": getattr(account, 'is_international', True),
         "description": account.description,
         "created_at": account.created_at.isoformat() if account.created_at else None,
         "updated_at": account.updated_at.isoformat() if account.updated_at else None
@@ -213,6 +224,7 @@ async def enable_account(account_id: int, db: Session = Depends(get_db)):
         "name": account.name,
         "region": account.region,
         "is_enabled": account.is_enabled,
+        "is_international": getattr(account, 'is_international', True),
         "description": account.description,
         "created_at": account.created_at.isoformat() if account.created_at else None,
         "updated_at": account.updated_at.isoformat() if account.updated_at else None
@@ -236,6 +248,7 @@ async def disable_account(account_id: int, db: Session = Depends(get_db)):
         "name": account.name,
         "region": account.region,
         "is_enabled": account.is_enabled,
+        "is_international": getattr(account, 'is_international', True),
         "description": account.description,
         "created_at": account.created_at.isoformat() if account.created_at else None,
         "updated_at": account.updated_at.isoformat() if account.updated_at else None

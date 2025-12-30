@@ -22,6 +22,7 @@ class AccountService:
         ak: str,
         sk: str,
         region: str = "cn-north-4",
+        is_international: bool = True,
         description: Optional[str] = None
     ) -> Account:
         """
@@ -33,12 +34,13 @@ class AccountService:
             ak: Access Key
             sk: Secret Key
             region: 首选区域（实际会自动发现所有区域）
+            is_international: 是否为国际站账户
             description: 描述
             
         Returns:
             创建的账户
         """
-        logger.info(f"创建账户: name={name}, region={region}")
+        logger.info(f"创建账户: name={name}, region={region}, is_international={is_international}")
         
         # 加密 AK/SK
         encrypted_ak, encrypted_sk = encryption_service.encrypt_ak_sk(ak, sk)
@@ -49,6 +51,7 @@ class AccountService:
             ak=encrypted_ak,
             sk=encrypted_sk,
             region=region,
+            is_international=is_international,
             is_enabled=True,
             description=description
         )
@@ -121,6 +124,7 @@ class AccountService:
         ak: Optional[str] = None,
         sk: Optional[str] = None,
         region: Optional[str] = None,
+        is_international: Optional[bool] = None,
         description: Optional[str] = None
     ) -> Optional[Account]:
         """
@@ -133,6 +137,7 @@ class AccountService:
             ak: 新 Access Key
             sk: 新 Secret Key
             region: 新首选区域
+            is_international: 是否为国际站账户
             description: 新描述
             
         Returns:
@@ -161,6 +166,9 @@ class AccountService:
             account.region = region
             # 清除客户端缓存
             client_manager.remove_client(account_id)
+        
+        if is_international is not None:
+            account.is_international = is_international
         
         if description is not None:
             account.description = description

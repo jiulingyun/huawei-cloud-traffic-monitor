@@ -20,8 +20,8 @@ class Account(Base):
     name = Column(String(100), nullable=False, comment="账户名称")
     ak = Column(String(255), nullable=False, comment="Access Key（加密）")
     sk = Column(String(255), nullable=False, comment="Secret Key（加密）")
-    region = Column(String(50), nullable=False, default="cn-north-4", comment="首选区域（仅作为默认值，实际会自动发现所有区域）")
-    # project_id 已移除 - 现在通过 IAM API 自动获取
+    region = Column(String(50), nullable=False, default="ap-southeast-1", comment="首选区域")
+    is_international = Column(Boolean, default=True, comment="是否国际站账户（影响 API 端点选择）")
     is_enabled = Column(Boolean, default=True, comment="是否启用")
     description = Column(String(500), comment="账户描述")
     

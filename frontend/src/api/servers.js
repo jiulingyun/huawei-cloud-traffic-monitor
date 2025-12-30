@@ -1,29 +1,49 @@
 /**
- * 服务器管理 API
+ * 服务器管理 API (Flexus L 实例)
  */
 import request from '@/utils/request'
 
 /**
- * 获取账户的区域列表
- * @param {number} accountId - 账户 ID
+ * 获取所有账户的 Flexus L 实例列表
  */
-export function getRegions(accountId) {
+export function getAllServers() {
   return request({
-    url: `/v1/servers/${accountId}/regions`,
+    url: '/v1/servers',
     method: 'get'
   })
 }
 
 /**
- * 获取服务器列表
+ * 获取指定账户的 Flexus L 实例列表
  * @param {number} accountId - 账户 ID
- * @param {Object} params - 查询参数 { region, project_id, limit }
  */
-export function getServers(accountId, params) {
+export function getServers(accountId) {
   return request({
     url: `/v1/servers/${accountId}`,
-    method: 'get',
-    params
+    method: 'get'
+  })
+}
+
+/**
+ * 获取指定账户的流量汇总
+ * @param {number} accountId - 账户 ID
+ */
+export function getAccountTraffic(accountId) {
+  return request({
+    url: `/v1/servers/${accountId}/traffic`,
+    method: 'get'
+  })
+}
+
+/**
+ * 获取指定实例的流量使用情况
+ * @param {number} accountId - 账户 ID
+ * @param {string} instanceId - 实例 ID
+ */
+export function getInstanceTraffic(accountId, instanceId) {
+  return request({
+    url: `/v1/servers/${accountId}/instance/${instanceId}/traffic`,
+    method: 'get'
   })
 }
 
