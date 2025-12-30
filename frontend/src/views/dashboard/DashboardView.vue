@@ -162,15 +162,17 @@
           <div class="system-info">
             <div class="info-item">
               <span class="info-label">系统版本</span>
-              <span class="info-value">v1.0.0</span>
+              <span class="info-value">{{ version }}</span>
             </div>
             <div class="info-item">
               <span class="info-label">监控状态</span>
-              <el-tag type="success" size="small">运行中</el-tag>
+              <el-tag :type="systemInfo.monitoring_status === 'running' ? 'success' : (systemInfo.monitoring_status === 'stopped' ? 'info' : 'warning')" size="small">
+                {{ systemInfo.monitoring_status }}
+              </el-tag>
             </div>
             <div class="info-item">
               <span class="info-label">上次检查</span>
-              <span class="info-value">5 分钟前</span>
+              <span class="info-value">{{ systemInfo.last_check ? formatRelativeTime(systemInfo.last_check) : '未运行' }}</span>
             </div>
           </div>
         </el-card>
@@ -186,7 +188,7 @@ import {
   Plus, Setting, View, Document
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { formatTimelineTimestamp } from '@/utils/time'
+import { formatTimelineTimestamp, formatRelativeTime } from '@/utils/time'
 import {
   getDashboardStats,
   getDashboardAccounts,
@@ -219,6 +221,13 @@ onMounted(() => {
   loadDashboardData()
 })
 
+// 系统版本 & 状态
+const version = ref('v1.0.0')
+const systemInfo = reactive({
+  monitoring_status: 'unknown',
+  last_check: null
+})
+
 // 加载仪表板数据
 const loadDashboardData = async () => {
   loading.value = true
@@ -241,6 +250,15 @@ const loadDashboardData = async () => {
 
     // 更新通知列表
     notifications.value = notificationsData || []
+    // 加载系统信息（包含版本号、监控状态与上次检查时间）
+    try {
+      const sys = await getSystemInfo()
+      version.value = sys.version || version.value
+      systemInfo.monitoring_status = sys.monitoring_status || systemInfo.monitoring_status
+      systemInfo.last_check = sys.last_check || systemInfo.last_check
+    } catch (e) {
+      // ignore
+    }
   } catch (error) {
     console.error('加载仪表板数据失败:', error)
     ElMessage.error('加载仪表板数据失败')

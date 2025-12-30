@@ -14,6 +14,9 @@ from app.models.account import Account
 from app.models.config import Config
 from app.services.huawei_cloud.flexusl_service import FlexusLService
 from app.utils.encryption import get_encryption_service
+import os
+from app.services.scheduler import monitor_scheduler
+from app.models.monitor_log import MonitorLog
 
 router = APIRouter(prefix="/dashboard", tags=["仪表板"])
 
@@ -171,12 +174,33 @@ async def get_system_info(db: Session = Depends(get_db)):
     # 获取配置数量
     config_count = db.query(func.count(Config.id)).scalar() or 0
     
-    # TODO: 从监控任务中获取上次检查时间
-    last_check = "未运行"
+    # 获取最新的监控检查时间
+    last_check = None
+    try:
+        last_dt = db.query(func.max(MonitorLog.check_time)).scalar()
+        if last_dt:
+            last_check = last_dt.isoformat()
+        else:
+            last_check = None
+    except Exception:
+        last_check = None
+
+    # 监控服务状态（基于调度器）
+    try:
+        monitoring_status = "running" if monitor_scheduler.is_running() else "stopped"
+    except Exception:
+        monitoring_status = "unknown"
     
+    # 优先从包内读取 __version__，兼容 Docker 等运行环境
+    try:
+        from app import __version__ as version
+    except Exception:
+        # 回退值
+        version = "v0.0.0"
+
     return success_response(data={
-        "version": "v1.0.1",
-        "monitoring_status": "running",
+        "version": version,
+        "monitoring_status": monitoring_status,
         "last_check": last_check,
         "config_count": config_count,
         "uptime": "-"  # TODO: 从启动时间计算
