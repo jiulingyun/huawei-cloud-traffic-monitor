@@ -68,6 +68,16 @@ class HuaweiCloudClient:
         Returns:
             签名后的请求头
         """
+        # 规范化 URI：对路径中每个部分单独进行 URL 编码
+        # 华为云要求保留 '/' 不编码，但对每个路径段进行编码
+        canonical_uri = '/'.join(
+            quote(segment, safe='')
+            for segment in uri.split('/')
+        )
+        # 确保以 / 结尾（华为云签名规范要求）
+        if not canonical_uri.endswith('/'):
+            canonical_uri += '/'
+        
         # 规范化查询字符串
         canonical_query_string = ""
         if query_params:
@@ -95,7 +105,7 @@ class HuaweiCloudClient:
         # 构建规范请求
         canonical_request = (
             f"{method}\n"
-            f"{uri}\n"
+            f"{canonical_uri}\n"
             f"{canonical_query_string}\n"
             f"{canonical_headers}\n"
             f"{signed_headers_str}\n"

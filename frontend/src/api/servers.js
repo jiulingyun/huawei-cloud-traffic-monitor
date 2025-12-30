@@ -4,9 +4,20 @@
 import request from '@/utils/request'
 
 /**
+ * 获取账户的区域列表
+ * @param {number} accountId - 账户 ID
+ */
+export function getRegions(accountId) {
+  return request({
+    url: `/v1/servers/${accountId}/regions`,
+    method: 'get'
+  })
+}
+
+/**
  * 获取服务器列表
  * @param {number} accountId - 账户 ID
- * @param {Object} params - 查询参数
+ * @param {Object} params - 查询参数 { region, project_id, limit }
  */
 export function getServers(accountId, params) {
   return request({

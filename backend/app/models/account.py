@@ -8,14 +8,20 @@ from app.core.database import Base
 
 
 class Account(Base):
-    """华为云账户模型"""
+    """
+    华为云账户模型
+    
+    一个账户对应一组 AK/SK，可以访问该账户下所有区域的资源
+    region 字段保留作为首选/默认区域，实际查询时会自动发现所有区域
+    """
     __tablename__ = "accounts"
 
     id = Column(Integer, primary_key=True, index=True, comment="主键ID")
     name = Column(String(100), nullable=False, comment="账户名称")
     ak = Column(String(255), nullable=False, comment="Access Key（加密）")
     sk = Column(String(255), nullable=False, comment="Secret Key（加密）")
-    region = Column(String(50), nullable=False, default="cn-north-4", comment="区域")
+    region = Column(String(50), nullable=False, default="cn-north-4", comment="首选区域（仅作为默认值，实际会自动发现所有区域）")
+    # project_id 已移除 - 现在通过 IAM API 自动获取
     is_enabled = Column(Boolean, default=True, comment="是否启用")
     description = Column(String(500), comment="账户描述")
     

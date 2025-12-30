@@ -125,13 +125,14 @@
             show-password
           />
         </el-form-item>
-        <el-form-item label="区域" prop="region">
-          <el-select v-model="formData.region" placeholder="请选择区域" style="width: 100%">
+        <el-form-item label="首选区域" prop="region">
+          <el-select v-model="formData.region" placeholder="请选择首选区域" style="width: 100%">
             <el-option label="华北-北京四 (cn-north-4)" value="cn-north-4" />
             <el-option label="华东-上海一 (cn-east-3)" value="cn-east-3" />
             <el-option label="华南-广州 (cn-south-1)" value="cn-south-1" />
             <el-option label="西南-贵阳一 (cn-southwest-2)" value="cn-southwest-2" />
           </el-select>
+          <div class="form-tip">系统会自动发现该账户下所有区域的服务器</div>
         </el-form-item>
         <el-form-item label="描述" prop="description">
           <el-input
@@ -432,5 +433,12 @@ onMounted(() => {
 .toolbar-right {
   display: flex;
   align-items: center;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 </style>

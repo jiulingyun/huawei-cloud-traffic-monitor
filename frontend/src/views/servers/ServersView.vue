@@ -8,7 +8,7 @@
           <el-select
             v-model="selectedAccountId"
             placeholder="请选择账户"
-            style="width: 250px"
+            style="width: 200px"
             @change="handleAccountChange"
           >
             <el-option
@@ -18,15 +18,35 @@
               :value="account.id"
             />
           </el-select>
+          
+          <span class="label" style="margin-left: 20px;">选择区域：</span>
+          <el-select
+            v-model="selectedRegion"
+            placeholder="请选择区域"
+            style="width: 200px"
+            :disabled="!selectedAccountId || regionsLoading"
+            :loading="regionsLoading"
+            @change="handleRegionChange"
+          >
+            <el-option
+              v-for="region in regions"
+              :key="region.id"
+              :label="region.display_name"
+              :value="region.name"
+            >
+              <span>{{ region.display_name }}</span>
+              <span style="color: #909399; font-size: 12px; margin-left: 8px;">{{ region.name }}</span>
+            </el-option>
+          </el-select>
         </div>
         <div class="toolbar-right">
           <el-button
             :icon="Refresh"
             :loading="loading"
-            :disabled="!selectedAccountId"
+            :disabled="!selectedAccountId || !selectedRegion"
             @click="loadServers"
           >
-            刷新服务器列表
+            刷新
           </el-button>
         </div>
       </div>
@@ -37,7 +57,7 @@
         :data="servers"
         style="width: 100%; margin-top: 20px"
         stripe
-        empty-text="请选择账户查看服务器列表"
+        empty-text="请选择账户和区域查看服务器列表"
       >
         <el-table-column prop="id" label="服务器 ID" width="280" show-overflow-tooltip />
         <el-table-column prop="name" label="名称" width="180" show-overflow-tooltip />
@@ -112,18 +132,24 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Refresh, SwitchButton, CircleCheckFilled, CircleCloseFilled
 } from '@element-plus/icons-vue'
 import { getAccounts } from '@/api/accounts'
-import { getServers } from '@/api/servers'
+import { getServers, getRegions } from '@/api/servers'
+
+// localStorage key
+const REGION_CACHE_KEY = 'huawei_cloud_selected_region'
 
 // 响应式数据
 const loading = ref(false)
+const regionsLoading = ref(false)
 const selectedAccountId = ref(null)
+const selectedRegion = ref(null)
 const accounts = ref([])
+const regions = ref([])
 const servers = ref([])
 
 // 启用的账户列表
@@ -141,6 +167,25 @@ const stoppedCount = computed(() => {
   return servers.value.filter(s => s.status === 'SHUTOFF').length
 })
 
+// 从缓存获取上次选择的区域
+const getCachedRegion = (accountId) => {
+  try {
+    const cached = localStorage.getItem(`${REGION_CACHE_KEY}_${accountId}`)
+    return cached ? JSON.parse(cached) : null
+  } catch {
+    return null
+  }
+}
+
+// 缓存选择的区域
+const cacheRegion = (accountId, region) => {
+  try {
+    localStorage.setItem(`${REGION_CACHE_KEY}_${accountId}`, JSON.stringify(region))
+  } catch {
+    // ignore
+  }
+}
+
 // 加载账户列表
 const loadAccounts = async () => {
   try {
@@ -150,7 +195,7 @@ const loadAccounts = async () => {
     // 自动选择第一个启用的账户
     if (enabledAccounts.value.length > 0 && !selectedAccountId.value) {
       selectedAccountId.value = enabledAccounts.value[0].id
-      await loadServers()
+      await loadRegions()
     }
   } catch (error) {
     console.error('加载账户列表失败:', error)
@@ -158,29 +203,83 @@ const loadAccounts = async () => {
   }
 }
 
+// 加载区域列表
+const loadRegions = async () => {
+  if (!selectedAccountId.value) return
+  
+  regionsLoading.value = true
+  regions.value = []
+  selectedRegion.value = null
+  servers.value = []
+  
+  try {
+    const data = await getRegions(selectedAccountId.value)
+    regions.value = data
+    
+    if (data.length > 0) {
+      // 尝试从缓存恢复上次选择的区域
+      const cached = getCachedRegion(selectedAccountId.value)
+      if (cached && data.find(r => r.name === cached.name)) {
+        selectedRegion.value = cached.name
+      } else {
+        // 默认选择第一个区域
+        selectedRegion.value = data[0].name
+      }
+      // 加载服务器
+      await loadServers()
+    }
+  } catch (error) {
+    console.error('加载区域列表失败:', error)
+    ElMessage.error('加载区域列表失败')
+  } finally {
+    regionsLoading.value = false
+  }
+}
+
 // 账户切换
 const handleAccountChange = async () => {
   servers.value = []
+  regions.value = []
+  selectedRegion.value = null
   if (selectedAccountId.value) {
+    await loadRegions()
+  }
+}
+
+// 区域切换
+const handleRegionChange = async () => {
+  servers.value = []
+  if (selectedRegion.value) {
+    // 缓存选择
+    const region = regions.value.find(r => r.name === selectedRegion.value)
+    if (region) {
+      cacheRegion(selectedAccountId.value, region)
+    }
     await loadServers()
   }
 }
 
 // 加载服务器列表
 const loadServers = async () => {
-  if (!selectedAccountId.value) {
-    ElMessage.warning('请先选择账户')
+  if (!selectedAccountId.value || !selectedRegion.value) {
+    return
+  }
+  
+  // 获取当前选中区域的 project_id
+  const region = regions.value.find(r => r.name === selectedRegion.value)
+  if (!region) {
+    ElMessage.warning('请选择区域')
     return
   }
 
   loading.value = true
   try {
-    const data = await getServers(selectedAccountId.value, { limit: 1000 })
+    const data = await getServers(selectedAccountId.value, {
+      region: selectedRegion.value,
+      project_id: region.id,
+      limit: 1000
+    })
     servers.value = data
-    
-    if (data.length === 0) {
-      ElMessage.info('该账户下暂无服务器')
-    }
   } catch (error) {
     console.error('加载服务器列表失败:', error)
     ElMessage.error('加载服务器列表失败')

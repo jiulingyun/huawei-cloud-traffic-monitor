@@ -32,7 +32,7 @@ class AccountService:
             name: 账户名称
             ak: Access Key
             sk: Secret Key
-            region: 区域
+            region: 首选区域（实际会自动发现所有区域）
             description: 描述
             
         Returns:
@@ -132,7 +132,7 @@ class AccountService:
             name: 新名称
             ak: 新 Access Key
             sk: 新 Secret Key
-            region: 新区域
+            region: 新首选区域
             description: 新描述
             
         Returns:

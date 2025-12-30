@@ -15,11 +15,11 @@ router = APIRouter(prefix="/accounts", tags=["账户管理"])
 
 # Pydantic 模型
 class AccountCreate(BaseModel):
-    """$创建账户请求模型"""
+    """创建账户请求模型"""
     name: str = Field(..., description="账户名称", min_length=1, max_length=100)
     ak: str = Field(..., description="Access Key", min_length=1)
     sk: str = Field(..., description="Secret Key", min_length=1)
-    region: str = Field(default="cn-north-4", description="区域")
+    region: str = Field(default="cn-north-4", description="首选区域（实际会自动发现所有区域）")
     description: Optional[str] = Field(None, description="账户描述", max_length=500)
 
 
@@ -28,7 +28,7 @@ class AccountUpdate(BaseModel):
     name: Optional[str] = Field(None, description="账户名称", min_length=1, max_length=100)
     ak: Optional[str] = Field(None, description="Access Key", min_length=1)
     sk: Optional[str] = Field(None, description="Secret Key", min_length=1)
-    region: Optional[str] = Field(None, description="区域")
+    region: Optional[str] = Field(None, description="首选区域")
     description: Optional[str] = Field(None, description="账户描述", max_length=500)
 
 
