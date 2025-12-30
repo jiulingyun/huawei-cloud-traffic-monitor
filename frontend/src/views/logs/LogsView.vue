@@ -150,7 +150,7 @@
         <el-table-column prop="account_name" label="账户" width="150" show-overflow-tooltip />
         <el-table-column prop="created_at" label="时间" width="180" sortable>
           <template #default="scope">
-            {{ formatDate(scope.row.created_at) }}
+            {{ formatDateTime(scope.row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right">
@@ -200,7 +200,7 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="账户">{{ currentLog.account_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="时间">{{ formatDate(currentLog.created_at) }}</el-descriptions-item>
+        <el-descriptions-item label="时间">{{ formatDateTime(currentLog.created_at) }}</el-descriptions-item>
         <el-descriptions-item label="内容">
           <div style="white-space: pre-wrap; word-break: break-all">
             {{ currentLog.message }}
@@ -218,6 +218,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Delete, WarningFilled } from '@element-plus/icons-vue'
+import { formatDateTime } from '@/utils/time'
 import { getAllLogs, getLogStats, cleanOldLogs } from '@/api/logs'
 import { getAccounts } from '@/api/accounts'
 
@@ -410,19 +411,6 @@ const getLevelColor = (level) => {
   return colorMap[level] || 'info'
 }
 
-// 格式化日期
-const formatDate = (dateString) => {
-  if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  })
-}
 
 // 组件加载时
 onMounted(() => {

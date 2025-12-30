@@ -141,10 +141,11 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
+import { getCurrentLocalTime } from '@/utils/time'
 
 // 系统信息
 const systemInfo = reactive({
-  start_time: new Date().toLocaleString('zh-CN'),
+  start_time: getCurrentLocalTime(),
   uptime: '-'
 })
 

@@ -438,18 +438,22 @@ class TrafficService:
     
     def get_traffic_summary(
         self,
-        resource_ids: List[str]
+        resource_ids: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         获取流量汇总信息
         
         Args:
-            resource_ids: 流量包资源ID列表
+            resource_ids: 流量包资源ID列表（可选）。若为 None，则自动发现账户下所有流量包并汇总。
             
         Returns:
             流量汇总信息
         """
-        packages = self.query_traffic_packages(resource_ids)
+        # 如果没有传入 resource_ids，则自动发现所有流量包
+        if resource_ids is None:
+            packages = self.query_all_traffic()
+        else:
+            packages = self.query_traffic_packages(resource_ids)
         
         total = sum(pkg.total_amount for pkg in packages)
         used = sum(pkg.used_amount for pkg in packages)

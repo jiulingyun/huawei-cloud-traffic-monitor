@@ -145,7 +145,7 @@
             <el-timeline-item
               v-for="item in notifications"
               :key="item.id"
-              :timestamp="item.time"
+              :timestamp="formatTimelineTimestamp(item.time)"
               :type="item.type"
             >
               {{ item.content }}
@@ -181,11 +181,12 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { 
-  User, Cpu, Warning, Monitor, TrendCharts, 
-  Plus, Setting, View, Document 
+import {
+  User, Cpu, Warning, Monitor, TrendCharts,
+  Plus, Setting, View, Document
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { formatTimelineTimestamp } from '@/utils/time'
 import {
   getDashboardStats,
   getDashboardAccounts,

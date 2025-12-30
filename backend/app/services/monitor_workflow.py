@@ -236,9 +236,10 @@ class MonitorWorkflowExecutor:
             logger.info("步骤 2: 查询流量包信息")
             traffic_service = TrafficService(client)
             
-            # 使用重试执行器查询流量
+            # 使用重试执行器查询流量（使用自动发现的汇总方法）
+            # get_traffic_summary 需要 resource_ids 参数 —— 使用 get_all_traffic_summary 以自动发现并汇总
             traffic_summary = RetryExecutor.execute_with_retry(
-                func=traffic_service.get_traffic_summary,
+                func=traffic_service.get_all_traffic_summary,
                 max_retries=retry_times,
                 retry_delay=2.0,
                 backoff_factor=2.0
@@ -331,9 +332,9 @@ class MonitorWorkflowExecutor:
                     # 等待延迟时间
                     time.sleep(shutdown_delay * 60)
                     
-                    # 延迟后重新检查流量，避免误关机
+                    # 延迟后重新检查流量，避免误关机（使用自动发现的汇总方法）
                     logger.info("延迟结束，重新检查流量")
-                    traffic_summary_recheck = traffic_service.get_traffic_summary()
+                    traffic_summary_recheck = traffic_service.get_all_traffic_summary()
                     remaining_traffic_recheck = traffic_summary_recheck['total_remaining_gb']
                     
                     is_still_below, _ = monitor_logic.check_traffic_threshold(

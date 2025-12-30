@@ -123,7 +123,8 @@ class MonitorLogic:
                 usage_percentage=usage_percentage,
                 threshold=threshold,
                 is_below_threshold=is_below_threshold,
-                check_time=datetime.now(),
+                # 统一使用 UTC 存储时间，避免本地/UTC 混用导致前端解析错误
+                check_time=datetime.utcnow(),
                 message=check_result
             )
             

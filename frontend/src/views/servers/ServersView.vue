@@ -204,6 +204,7 @@ import {
   getAllServers, getServers, getInstanceTraffic, getServerStatus,
   startServer, stopServer, rebootServer, getJobStatus
 } from '@/api/servers'
+import { formatDate } from '@/utils/time'
 
 // 响应式数据
 const loading = ref(false)
@@ -599,18 +600,6 @@ const getStatusText = (status) => {
   return statusMap[status] || status
 }
 
-// 格式化日期
-const formatDate = (dateString) => {
-  if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
 
 // 组件加载时
 onMounted(async () => {

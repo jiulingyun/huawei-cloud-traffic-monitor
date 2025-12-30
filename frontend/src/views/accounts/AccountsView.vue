@@ -159,6 +159,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus, Edit, Delete, Search, Refresh
 } from '@element-plus/icons-vue'
+import { formatDate } from '@/utils/time'
 import {
   getAccounts,
   createAccount,
@@ -400,18 +401,6 @@ const resetForm = () => {
   }
 }
 
-// 格式化日期
-const formatDate = (dateString) => {
-  if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
 
 // 组件加载时
 onMounted(() => {
