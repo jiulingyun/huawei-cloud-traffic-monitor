@@ -33,6 +33,13 @@
             <el-tag size="small">{{ scope.row.region }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="is_international" label="站点" width="120">
+          <template #default="scope">
+            <el-tag :type="scope.row.is_international ? 'primary' : 'info'" size="small">
+              {{ scope.row.is_international ? '国际站' : '中国站' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
         <el-table-column prop="is_enabled" label="状态" width="100">
           <template #default="scope">
@@ -134,6 +141,13 @@
           </el-select>
           <div class="form-tip">系统会自动发现该账户下所有区域的服务器</div>
         </el-form-item>
+        <el-form-item label="站点" prop="is_international">
+          <el-radio-group v-model="formData.is_international">
+            <el-radio :label="true">国际站</el-radio>
+            <el-radio :label="false">中国站</el-radio>
+          </el-radio-group>
+          <div class="form-tip">选择账户所属站点，决定使用哪个 BSS/区域端点进行流量查询</div>
+        </el-form-item>
         <el-form-item label="描述" prop="description">
           <el-input
             v-model="formData.description"
@@ -188,6 +202,7 @@ const formData = reactive({
   ak: '',
   sk: '',
   region: 'cn-north-4',
+  is_international: true,
   description: ''
 })
 
@@ -264,6 +279,7 @@ const handleEdit = (row) => {
   formData.ak = '' // 不显示原密钥
   formData.sk = '' // 不显示原密钥
   formData.region = row.region
+  formData.is_international = typeof row.is_international !== 'undefined' ? row.is_international : true
   formData.description = row.description || ''
   dialogVisible.value = true
 }
@@ -362,6 +378,7 @@ const handleSubmit = async () => {
     const data = {
       name: formData.name,
       region: formData.region,
+      is_international: formData.is_international,
       description: formData.description || undefined
     }
 

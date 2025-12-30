@@ -117,9 +117,11 @@ class RetryExecutor:
 
 from app.services.huawei_cloud import (
     client_manager,
-    TrafficService,
     ECSService
 )
+from app.services.huawei_cloud.flexusl_service import FlexusLService
+from app.services.account_service import account_service
+from app.utils.encryption import get_encryption_service
 from app.services.huawei_cloud.bss_client import HuaweiCloudBSSClient
 from app.services.huawei_cloud.shutdown_service import ShutdownService, ShutdownType
 from app.services.huawei_cloud.job_service import JobService
@@ -235,10 +237,18 @@ class MonitorWorkflowExecutor:
             
             # 步骤 2: 查询流量包信息（带重试）
             logger.info("步骤 2: 查询流量包信息")
-            # TrafficService 需要一个 BSS 客户端用于计费/流量相关 API，
-            # client_manager 返回的是通用的 ECS 客户端（用于 ECS 操作），因此这里需要用 AK/SK 创建 BSS 客户端
-            bss_client = HuaweiCloudBSSClient(ak, sk, is_intl)
-            traffic_service = TrafficService(bss_client)
+            # 需要解密 AK/SK 并根据账户属性判断是否为国际站，然后创建 BSS 客户端供 TrafficService 使用
+            encryption_service = get_encryption_service()
+            ak, sk = encryption_service.decrypt_ak_sk(encrypted_ak, encrypted_sk)
+            account = account_service.get_account(db=db, account_id=account_id)
+            is_intl = getattr(account, 'is_international', True) if account else True
+            # 使用 FlexusLService（通过 Config + BSS 查询），行为与 tests/test_full_workflow.py 保持一致
+            traffic_service = FlexusLService(
+                ak=ak,
+                sk=sk,
+                region=account.region,
+                is_international=is_intl
+            )
             
             # 使用重试执行器查询流量（使用自动发现的汇总方法）
             # get_traffic_summary 需要 resource_ids 参数 —— 使用 get_all_traffic_summary 以自动发现并汇总
@@ -249,10 +259,10 @@ class MonitorWorkflowExecutor:
                 backoff_factor=2.0
             )
             
-            remaining_traffic = traffic_summary['total_remaining_gb']
+            # FlexusLService 返回字段: remaining_amount, total_amount, used_amount
+            remaining_traffic = traffic_summary.get('remaining_amount', 0)
             usage_percentage = (
-                (1 - remaining_traffic / traffic_threshold) * 100
-                if traffic_threshold > 0 else 0
+                traffic_summary.get('usage_percentage', 0)
             )
             
             result['traffic_checked'] = True
@@ -274,19 +284,108 @@ class MonitorWorkflowExecutor:
             
             result['is_below_threshold'] = is_below_threshold
             
-            # 步骤 4: 记录监控日志
-            logger.info("步骤 4: 记录监控日志")
-            monitor_log = monitor_logic.create_monitor_log(
-                db=db,
-                account_id=account_id,
-                remaining_traffic=remaining_traffic,
-                threshold=traffic_threshold,
-                is_below_threshold=is_below_threshold,
-                check_result=check_result,
-                traffic_total=traffic_summary.get('total_traffic_gb'),
-                traffic_used=traffic_summary.get('total_used_gb'),
-                usage_percentage=usage_percentage
-            )
+            # 步骤 4: 按实例记录监控日志并单实例处理（按全局阈值比较）
+            logger.info("步骤 4: 按实例记录监控日志并单实例处理")
+            instances = traffic_summary.get('instances', [])
+            packages = traffic_summary.get('packages', [])
+            # 构建流量包 id -> 包信息 映射
+            pkg_map = {p.get('resource_id'): p for p in (packages or [])}
+
+            for inst in instances:
+                try:
+                    server_id = inst.get('server_id')
+                    pkg_id = inst.get('traffic_package_id')
+                    inst_region = inst.get('region') or region
+
+                    pkg = pkg_map.get(pkg_id, {})
+                    inst_remaining = float(pkg.get('remaining_amount', 0) or 0)
+                    inst_total = float(pkg.get('total_amount') or 0) if pkg.get('total_amount') is not None else None
+                    inst_used = float(pkg.get('used_amount') or 0) if pkg.get('used_amount') is not None else None
+                    inst_usage_pct = float(pkg.get('usage_percentage') or 0)
+
+                    is_below, inst_check_desc = monitor_logic.check_traffic_threshold(
+                        remaining_traffic=inst_remaining,
+                        threshold=traffic_threshold
+                    )
+
+                    # 写入监控日志（按实例）
+                    monitor_logic.create_monitor_log(
+                        db=db,
+                        account_id=account_id,
+                        remaining_traffic=inst_remaining,
+                        threshold=traffic_threshold,
+                        is_below_threshold=is_below,
+                        check_result=inst_check_desc,
+                        traffic_total=inst_total,
+                        traffic_used=inst_used,
+                        usage_percentage=inst_usage_pct,
+                        server_id=server_id
+                    )
+
+                    # 若低于阈值并启用自动关机，则对该实例执行关机（单机）
+                    if is_below and auto_shutdown_enabled and self.enable_auto_shutdown and server_id:
+                        logger.warning(f"实例流量低于阈值，准备对实例执行关机: server_id={server_id}, remaining={inst_remaining:.2f}GB")
+
+                        # 记录操作日志
+                        try:
+                            op_log = operation_log_service.create_operation_log(
+                                db=db,
+                                account_id=account_id,
+                                operation_type=OperationLogService.OP_AUTO_SHUTDOWN,
+                                target_id=server_id,
+                                target_name=inst.get('name'),
+                                target_type='server',
+                                region=inst_region,
+                                reason=f"流量不足自动关机: 剩余 {inst_remaining:.2f}GB < 阈值 {traffic_threshold:.2f}GB"
+                            )
+                        except Exception as e:
+                            logger.error(f"创建操作日志失败: {e}")
+                            op_log = None
+
+                        # 使用 FlexusLService 的单机关机接口（与批量接口复用）
+                        try:
+                            shutdown_result = traffic_service.batch_stop_servers(
+                                server_ids=[server_id],
+                                region=inst_region
+                            )
+
+                            # 更新操作日志状态
+                            if op_log:
+                                if shutdown_result.success:
+                                    operation_log_service.mark_success(db=db, log_id=op_log.id)
+                                else:
+                                    operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=shutdown_result.message or "关机失败")
+
+                            # 发送通知
+                            if self.enable_notifications:
+                                try:
+                                    if shutdown_result.success:
+                                        self.notification_service.send_shutdown_success(
+                                            account_name=account_name,
+                                            server_count=1,
+                                            job_id=shutdown_result.job_id,
+                                            duration_seconds=0
+                                        )
+                                    else:
+                                        self.notification_service.send_shutdown_failure(
+                                            account_name=account_name,
+                                            server_count=1,
+                                            job_id=shutdown_result.job_id,
+                                            error_message=shutdown_result.message or "未知错误"
+                                        )
+                                except Exception as e:
+                                    logger.error(f"发送关机通知失败: {e}")
+
+                        except Exception as e:
+                            logger.error(f"单实例关机失败: server_id={server_id}, error={e}")
+                            if op_log:
+                                try:
+                                    operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=str(e))
+                                except:
+                                    pass
+
+                except Exception as e:
+                    logger.error(f"处理实例监控时出错: inst={inst}, error={e}")
             
             # 步骤 5: 发送流量告警通知（如果使用率超过70%）
             if self.enable_notifications and usage_percentage >= 70:
@@ -339,7 +438,7 @@ class MonitorWorkflowExecutor:
                     # 延迟后重新检查流量，避免误关机（使用自动发现的汇总方法）
                     logger.info("延迟结束，重新检查流量")
                     traffic_summary_recheck = traffic_service.get_all_traffic_summary()
-                    remaining_traffic_recheck = traffic_summary_recheck['total_remaining_gb']
+                    remaining_traffic_recheck = traffic_summary_recheck.get('remaining_amount', 0)
                     
                     is_still_below, _ = monitor_logic.check_traffic_threshold(
                         remaining_traffic=remaining_traffic_recheck,

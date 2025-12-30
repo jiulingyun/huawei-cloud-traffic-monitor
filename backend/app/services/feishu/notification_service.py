@@ -189,6 +189,7 @@ class ShutdownSuccessTemplate(NotificationTemplate):
         server_count: int,
         job_id: str,
         duration_seconds: float = 0,
+        server: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -203,13 +204,27 @@ class ShutdownSuccessTemplate(NotificationTemplate):
         Returns:
             卡片配置
         """
+        # 若传入单台服务器信息，展示实例详情
+        server_details = ""
+        if server:
+            name = server.get("name", "未命名")
+            ip = server.get("ip", "N/A")
+            remaining = server.get("remaining", None)
+            threshold = server.get("threshold", None)
+            server_details = "\n\n---\n\n**实例信息**:\n"
+            server_details += f"• **{name}** ({ip})\n"
+            if remaining is not None:
+                server_details += f"• 剩余流量: {float(remaining):.2f} GB\n"
+            if threshold is not None:
+                server_details += f"• 阈值: {float(threshold):.2f} GB\n"
+
         content = f"""**账户名称**: {account_name}
 **关机数量**: {server_count} 台
 **任务 ID**: `{job_id}`
 **执行时长**: {duration_seconds:.1f} 秒
-**完成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**完成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{server_details}
 
-✅ 所有服务器已成功关机"""
+✅ 关机操作已完成"""
         
         return {
             "config": {
@@ -309,6 +324,7 @@ class ShutdownFailureTemplate(NotificationTemplate):
         server_count: int,
         job_id: str,
         error_message: str,
+        server: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -323,10 +339,23 @@ class ShutdownFailureTemplate(NotificationTemplate):
         Returns:
             卡片配置
         """
+        server_details = ""
+        if server:
+            name = server.get("name", "未命名")
+            ip = server.get("ip", "N/A")
+            remaining = server.get("remaining", None)
+            threshold = server.get("threshold", None)
+            server_details = "\n\n---\n\n**实例信息**:\n"
+            server_details += f"• **{name}** ({ip})\n"
+            if remaining is not None:
+                server_details += f"• 剩余流量: {float(remaining):.2f} GB\n"
+            if threshold is not None:
+                server_details += f"• 阈值: {float(threshold):.2f} GB\n"
+
         content = f"""**账户名称**: {account_name}
 **关机数量**: {server_count} 台
 **任务 ID**: `{job_id}`
-**失败时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**失败时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{server_details}
 
 ---
 
