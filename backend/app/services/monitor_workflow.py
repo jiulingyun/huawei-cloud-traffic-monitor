@@ -259,6 +259,14 @@ class MonitorWorkflowExecutor:
                 backoff_factor=2.0
             )
             
+            # 如果未发现任何实例，则跳过本账户的监控与告警（避免把空结果当作 0GB 报警）
+            instances_check = traffic_summary.get('instances', [])
+            if not instances_check:
+                logger.info(f"未发现任何实例，跳过账户监控: account_id={account_id}, account_name={account_name}")
+                result['success'] = True
+                result['skipped_no_instances'] = True
+                return result
+            
             # FlexusLService 返回字段: remaining_amount, total_amount, used_amount
             remaining_traffic = traffic_summary.get('remaining_amount', 0)
             usage_percentage = (
@@ -356,22 +364,30 @@ class MonitorWorkflowExecutor:
                                 else:
                                     operation_log_service.mark_failed(db=db, log_id=op_log.id, error_message=shutdown_result.message or "关机失败")
 
-                            # 发送通知
+                            # 发送通知（包含实例详情）
                             if self.enable_notifications:
                                 try:
+                                    server_info = {
+                                        "name": inst.get("name") or inst.get("id") or "未命名",
+                                        "ip": inst.get("public_ip") or inst.get("publicIp") or inst.get("ip") or "N/A",
+                                        "remaining": inst_remaining,
+                                        "threshold": traffic_threshold
+                                    }
                                     if shutdown_result.success:
                                         self.notification_service.send_shutdown_success(
                                             account_name=account_name,
                                             server_count=1,
                                             job_id=shutdown_result.job_id,
-                                            duration_seconds=0
+                                            duration_seconds=0,
+                                            server=server_info
                                         )
                                     else:
                                         self.notification_service.send_shutdown_failure(
                                             account_name=account_name,
                                             server_count=1,
                                             job_id=shutdown_result.job_id,
-                                            error_message=shutdown_result.message or "未知错误"
+                                            error_message=shutdown_result.message or "未知错误",
+                                            server=server_info
                                         )
                                 except Exception as e:
                                     logger.error(f"发送关机通知失败: {e}")
