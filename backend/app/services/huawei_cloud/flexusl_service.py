@@ -25,7 +25,7 @@ from .bss_client import HuaweiCloudBSSClient, HuaweiCloudBSSException
 @dataclass
 class FlexusLInstance:
     """Flexus L 实例信息"""
-    id: str
+    id: str  # Flexus L 套餐 ID
     name: str
     region: str
     status: str
@@ -35,6 +35,8 @@ class FlexusLInstance:
     expire_time: Optional[str]
     # 流量包信息
     traffic_package_id: Optional[str] = None
+    # 云主机 ID（用于开关机操作）
+    server_id: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -47,6 +49,7 @@ class FlexusLInstance:
             'created_at': self.created_at,
             'expire_time': self.expire_time,
             'traffic_package_id': self.traffic_package_id,
+            'server_id': self.server_id,
         }
 
 
@@ -86,6 +89,66 @@ MEASURE_UNIT_MAP = {
     12: 'KB',
     17: 'Byte',
 }
+
+
+@dataclass
+class ServerActionResult:
+    """服务器操作结果"""
+    job_id: str
+    success: bool
+    message: str = ""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'job_id': self.job_id,
+            'success': self.success,
+            'message': self.message
+        }
+
+
+@dataclass
+class JobStatus:
+    """
+    Job 状态信息
+    
+    status 可能的值:
+    - SUCCESS: 成功
+    - FAIL: 失败
+    - RUNNING: 运行中
+    - INIT: 初始化
+    """
+    job_id: str
+    job_type: str  # Job 类型
+    status: str  # SUCCESS, FAIL, RUNNING, INIT
+    begin_time: Optional[str]  # 开始时间
+    end_time: Optional[str]  # 结束时间
+    error_code: Optional[str] = None  # 错误码
+    fail_reason: Optional[str] = None  # 失败原因
+    entities: Optional[Dict[str, Any]] = None  # 关联的实体信息
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'job_id': self.job_id,
+            'job_type': self.job_type,
+            'status': self.status,
+            'begin_time': self.begin_time,
+            'end_time': self.end_time,
+            'error_code': self.error_code,
+            'fail_reason': self.fail_reason,
+            'entities': self.entities
+        }
+    
+    @property
+    def is_success(self) -> bool:
+        return self.status == 'SUCCESS'
+    
+    @property
+    def is_failed(self) -> bool:
+        return self.status == 'FAIL'
+    
+    @property
+    def is_running(self) -> bool:
+        return self.status in ('RUNNING', 'INIT')
 
 
 class FlexusLService:
@@ -335,10 +398,11 @@ class FlexusLService:
                 status = properties.get('status', 'unknown')
                 sub_resources = properties.get('resources', [])
                 
-                # 遍历子资源，提取流量包 ID 和公网 IP
+                # 遍历子资源，提取流量包 ID、公网 IP 和云主机 ID
                 traffic_package_id = None
                 public_ip = None
                 private_ip = None
+                server_id = None  # 云主机 ID，用于开关机操作
                 
                 for sub_res in sub_resources:
                     logical_type = sub_res.get('logical_resource_type', '')
@@ -360,6 +424,10 @@ class FlexusLService:
                     
                     # 查找云主机信息: logical_resource_type = huaweicloudinternal_ecs_instance
                     elif 'ecs_instance' in logical_type:
+                        # physical_resource_id 就是云主机 ID（ECS ID）
+                        server_id = physical_id
+                        logger.debug(f"发现云主机 ID: {server_id}")
+                        
                         # 从 resource_attributes 中提取私有 IP
                         for attr in resource_attrs:
                             if attr.get('key') == 'nics':
@@ -380,13 +448,14 @@ class FlexusLService:
                     private_ip=private_ip,
                     created_at=resource.get('created', None),
                     expire_time=None,
-                    traffic_package_id=traffic_package_id
+                    traffic_package_id=traffic_package_id,
+                    server_id=server_id
                 )
                 
                 instances.append(instance)
                 logger.debug(
                     f"解析实例: id={instance_id}, name={name}, "
-                    f"ip={public_ip}, traffic_pkg={traffic_package_id}"
+                    f"server_id={server_id}, ip={public_ip}, traffic_pkg={traffic_package_id}"
                 )
                 
             except Exception as e:
@@ -575,8 +644,491 @@ class FlexusLService:
         )
         
         return summary
+    
+    # ==================== 服务器操作 API ====================
+    # 使用 ECS API 来操作 Flexus L 实例中的云主机
+    # 文档: https://support.huaweicloud.com/api-ecs/ecs_02_0301.html
+    
+    # 缓存 project_id
+    _project_cache: Dict[str, str] = {}
+    
+    def _get_project_id(self, region: str) -> str:
+        """
+        获取指定区域的 project_id
+        
+        Args:
+            region: 区域 ID
+            
+        Returns:
+            project_id
+        """
+        if region in self._project_cache:
+            return self._project_cache[region]
+        
+        # 获取所有项目
+        projects = self.iam_service.list_projects()
+        
+        for project in projects:
+            self._project_cache[project.name] = project.id
+            if project.name == region:
+                return project.id
+        
+        raise FlexusLException(f"未找到区域 {region} 的项目 ID")
+    
+    def _get_ecs_endpoint(self, region: str) -> str:
+        """
+        获取 ECS 服务端点
+        
+        Args:
+            region: 区域 ID
+            
+        Returns:
+            ECS 服务端点 URL
+        """
+        if self.is_international:
+            return f"https://ecs.{region}.myhuaweicloud.com"
+        else:
+            return f"https://ecs.{region}.myhuaweicloud.cn"
+    
+    def _send_server_action(
+        self,
+        region: str,
+        action_body: Dict[str, Any]
+    ) -> ServerActionResult:
+        """
+        发送服务器操作请求
+        
+        使用 ECS API 来操作 Flexus L 实例中的云主机
+        API: POST /v1/{project_id}/cloudservers/action
+        文档: https://support.huaweicloud.com/api-ecs/ecs_02_0301.html
+        
+        Args:
+            region: 区域ID
+            action_body: 操作请求体
+            
+        Returns:
+            操作结果
+        """
+        # 获取 project_id
+        try:
+            project_id = self._get_project_id(region)
+        except FlexusLException as e:
+            return ServerActionResult(
+                job_id="",
+                success=False,
+                message=str(e)
+            )
+        
+        endpoint = self._get_ecs_endpoint(region)
+        uri = f"/v1/{project_id}/cloudservers/action"
+        url = f"{endpoint}{uri}"
+        host = endpoint.replace('https://', '').replace('http://', '')
+        
+        body_str = json.dumps(action_body)
+        
+        headers = self._sign_request(
+            method='POST',
+            uri=uri,
+            host=host,
+            query_params=None,
+            body=body_str
+        )
+        headers['Content-Type'] = 'application/json'
+        
+        try:
+            logger.info(f"发送服务器操作请求: POST {url}")
+            logger.debug(f"请求体: {body_str}")
+            
+            response = self.session.post(
+                url=url,
+                headers=headers,
+                data=body_str,
+                timeout=30
+            )
+            
+            logger.info(f"服务器操作响应: status={response.status_code}")
+            
+            if response.status_code >= 400:
+                error_msg = f"服务器操作失败: HTTP {response.status_code}"
+                try:
+                    error_detail = response.json()
+                    error_msg += f", 详情: {error_detail}"
+                except:
+                    error_msg += f", 响应: {response.text}"
+                logger.error(error_msg)
+                return ServerActionResult(
+                    job_id="",
+                    success=False,
+                    message=error_msg
+                )
+            
+            # 解析响应
+            if response.text:
+                data = response.json()
+                job_id = data.get('job_id', '')
+            else:
+                job_id = ''
+            
+            return ServerActionResult(
+                job_id=job_id,
+                success=True,
+                message="操作请求已提交"
+            )
+            
+        except Exception as e:
+            logger.error(f"服务器操作请求异常: {e}")
+            return ServerActionResult(
+                job_id="",
+                success=False,
+                message=str(e)
+            )
+    
+    def batch_start_servers(
+        self,
+        server_ids: List[str],
+        region: str
+    ) -> ServerActionResult:
+        """
+        批量启动 Flexus L 实例中的云主机
+        
+        使用 ECS API: POST /v1/{project_id}/cloudservers/action
+        文档: https://support.huaweicloud.com/api-ecs/ecs_02_0301.html
+        
+        Args:
+            server_ids: 云主机 ID 列表 (FlexusLInstance.server_id, 最多 1000 个)
+            region: 区域 ID
+            
+        Returns:
+            操作结果
+        """
+        if not server_ids:
+            return ServerActionResult(
+                job_id="",
+                success=False,
+                message="服务器 ID 列表不能为空"
+            )
+        
+        if len(server_ids) > 1000:
+            return ServerActionResult(
+                job_id="",
+                success=False,
+                message="单次最多支持操作 1000 台服务器"
+            )
+        
+        logger.info(f"批量启动服务器: count={len(server_ids)}, region={region}")
+        
+        servers = [{"id": sid} for sid in server_ids]
+        body = {
+            "os-start": {
+                "servers": servers
+            }
+        }
+        
+        return self._send_server_action(region, body)
+    
+    def batch_stop_servers(
+        self,
+        server_ids: List[str],
+        region: str,
+        stop_type: str = "SOFT"
+    ) -> ServerActionResult:
+        """
+        批量关闭 Flexus L 实例中的云主机
+        
+        使用 ECS API: POST /v1/{project_id}/cloudservers/action
+        文档: https://support.huaweicloud.com/api-ecs/ecs_02_0301.html
+        
+        Args:
+            server_ids: 云主机 ID 列表 (FlexusLInstance.server_id, 最多 1000 个)
+            region: 区域 ID
+            stop_type: 关机类型 (SOFT=正常关机, HARD=强制关机)
+            
+        Returns:
+            操作结果
+        """
+        if not server_ids:
+            return ServerActionResult(
+                job_id="",
+                success=False,
+                message="服务器 ID 列表不能为空"
+            )
+        
+        if len(server_ids) > 1000:
+            return ServerActionResult(
+                job_id="",
+                success=False,
+                message="单次最多支持操作 1000 台服务器"
+            )
+        
+        if stop_type not in ("SOFT", "HARD"):
+            stop_type = "SOFT"
+        
+        logger.info(f"批量关闭服务器: count={len(server_ids)}, region={region}, type={stop_type}")
+        
+        servers = [{"id": sid} for sid in server_ids]
+        body = {
+            "os-stop": {
+                "type": stop_type,
+                "servers": servers
+            }
+        }
+        
+        return self._send_server_action(region, body)
+    
+    def batch_reboot_servers(
+        self,
+        server_ids: List[str],
+        region: str,
+        reboot_type: str = "SOFT"
+    ) -> ServerActionResult:
+        """
+        批量重启 Flexus L 实例中的云主机
+        
+        使用 ECS API: POST /v1/{project_id}/cloudservers/action
+        文档: https://support.huaweicloud.com/api-ecs/ecs_02_0301.html
+        
+        Args:
+            server_ids: 云主机 ID 列表 (FlexusLInstance.server_id, 最多 1000 个)
+            region: 区域 ID
+            reboot_type: 重启类型 (SOFT=正常重启, HARD=强制重启)
+            
+        Returns:
+            操作结果
+        """
+        if not server_ids:
+            return ServerActionResult(
+                job_id="",
+                success=False,
+                message="服务器 ID 列表不能为空"
+            )
+        
+        if len(server_ids) > 1000:
+            return ServerActionResult(
+                job_id="",
+                success=False,
+                message="单次最多支持操作 1000 台服务器"
+            )
+        
+        if reboot_type not in ("SOFT", "HARD"):
+            reboot_type = "SOFT"
+        
+        logger.info(f"批量重启服务器: count={len(server_ids)}, region={region}, type={reboot_type}")
+        
+        servers = [{"id": sid} for sid in server_ids]
+        body = {
+            "reboot": {
+                "type": reboot_type,
+                "servers": servers
+            }
+        }
+        
+        return self._send_server_action(region, body)
+    
+    def start_server(self, server_id: str, region: str) -> ServerActionResult:
+        """启动单个服务器"""
+        return self.batch_start_servers([server_id], region)
+    
+    def stop_server(
+        self,
+        server_id: str,
+        region: str,
+        stop_type: str = "SOFT"
+    ) -> ServerActionResult:
+        """关闭单个服务器"""
+        return self.batch_stop_servers([server_id], region, stop_type)
+    
+    def reboot_server(
+        self,
+        server_id: str,
+        region: str,
+        reboot_type: str = "SOFT"
+    ) -> ServerActionResult:
+        """重启单个服务器"""
+        return self.batch_reboot_servers([server_id], region, reboot_type)
+    
+    # ==================== 云主机状态查询 API ====================
+    # 文档: https://support.huaweicloud.com/api-ecs/ecs_02_0104.html
+    
+    def get_server_status(self, server_id: str, region: str) -> Dict[str, Any]:
+        """
+        查询云主机实时状态
+        
+        使用 ECS API 获取云主机的实时状态，而不是 Config 服务的缓存状态
+        
+        API: GET /v1/{project_id}/cloudservers/{server_id}
+        文档: https://support.huaweicloud.com/api-ecs/ecs_02_0104.html
+        
+        Args:
+            server_id: 云主机 ID (FlexusLInstance.server_id)
+            region: 区域 ID
+            
+        Returns:
+            服务器详情，包含 status, name, addresses 等
+            
+        Raises:
+            FlexusLException: 查询失败时抛出
+        """
+        # 获取 project_id
+        try:
+            project_id = self._get_project_id(region)
+        except FlexusLException as e:
+            raise FlexusLException(f"获取 project_id 失败: {e}")
+        
+        endpoint = self._get_ecs_endpoint(region)
+        uri = f"/v1/{project_id}/cloudservers/{server_id}"
+        url = f"{endpoint}{uri}"
+        host = endpoint.replace('https://', '').replace('http://', '')
+        
+        headers = self._sign_request(
+            method='GET',
+            uri=uri,
+            host=host,
+            query_params=None,
+            body=""
+        )
+        
+        try:
+            logger.info(f"查询云主机状态: GET {url}")
+            
+            response = self.session.get(
+                url=url,
+                headers=headers,
+                timeout=30
+            )
+            
+            logger.info(f"云主机状态查询响应: status={response.status_code}")
+            
+            if response.status_code >= 400:
+                error_msg = f"查询云主机状态失败: HTTP {response.status_code}"
+                try:
+                    error_detail = response.json()
+                    error_msg += f", 详情: {error_detail}"
+                except:
+                    error_msg += f", 响应: {response.text}"
+                logger.error(error_msg)
+                raise FlexusLException(error_msg)
+            
+            data = response.json()
+            server = data.get('server', {})
+            
+            # 提取关键信息
+            result = {
+                'server_id': server.get('id'),
+                'name': server.get('name'),
+                'status': server.get('status'),  # ACTIVE, SHUTOFF, REBOOT, etc.
+                'OS-EXT-STS:vm_state': server.get('OS-EXT-STS:vm_state'),  # active, stopped
+                'OS-EXT-STS:task_state': server.get('OS-EXT-STS:task_state'),  # 当前任务
+                'OS-EXT-STS:power_state': server.get('OS-EXT-STS:power_state'),  # 1=running, 4=shutdown
+                'created': server.get('created'),
+                'updated': server.get('updated'),
+                'addresses': server.get('addresses', {}),
+                'flavor': server.get('flavor', {}),
+                'image': server.get('image', {}),
+            }
+            
+            logger.info(
+                f"云主机状态: server_id={result['server_id']}, "
+                f"status={result['status']}, vm_state={result.get('OS-EXT-STS:vm_state')}"
+            )
+            
+            return result
+            
+        except FlexusLException:
+            raise
+        except Exception as e:
+            logger.error(f"查询云主机状态异常: {e}")
+            raise FlexusLException(f"查询云主机状态失败: {e}")
+    
+    # ==================== Job 状态查询 API ====================
+    # 文档: https://support.huaweicloud.com/api-ecs/ecs_02_0901.html
+    
+    def get_job_status(self, job_id: str, region: str) -> JobStatus:
+        """
+        查询任务执行状态
+        
+        用于查询异步请求任务的执行状态，如创建、删除云服务器，
+        批量操作等异步 API 返回的 job_id
+        
+        API: GET /v1/{project_id}/jobs/{job_id}
+        文档: https://support.huaweicloud.com/api-ecs/ecs_02_0901.html
+        
+        Args:
+            job_id: 任务 ID
+            region: 区域 ID
+            
+        Returns:
+            Job 状态信息
+            
+        Raises:
+            FlexusLException: 查询失败时抛出
+        """
+        # 获取 project_id
+        try:
+            project_id = self._get_project_id(region)
+        except FlexusLException as e:
+            raise FlexusLException(f"获取 project_id 失败: {e}")
+        
+        endpoint = self._get_ecs_endpoint(region)
+        uri = f"/v1/{project_id}/jobs/{job_id}"
+        url = f"{endpoint}{uri}"
+        host = endpoint.replace('https://', '').replace('http://', '')
+        
+        headers = self._sign_request(
+            method='GET',
+            uri=uri,
+            host=host,
+            query_params=None,
+            body=""
+        )
+        
+        try:
+            logger.info(f"查询 Job 状态: GET {url}")
+            
+            response = self.session.get(
+                url=url,
+                headers=headers,
+                timeout=30
+            )
+            
+            logger.info(f"Job 状态查询响应: status={response.status_code}")
+            
+            if response.status_code >= 400:
+                error_msg = f"查询 Job 状态失败: HTTP {response.status_code}"
+                try:
+                    error_detail = response.json()
+                    error_msg += f", 详情: {error_detail}"
+                except:
+                    error_msg += f", 响应: {response.text}"
+                logger.error(error_msg)
+                raise FlexusLException(error_msg)
+            
+            data = response.json()
+            
+            # 解析响应
+            job_status = JobStatus(
+                job_id=data.get('job_id', job_id),
+                job_type=data.get('job_type', ''),
+                status=data.get('status', 'UNKNOWN'),
+                begin_time=data.get('begin_time'),
+                end_time=data.get('end_time'),
+                error_code=data.get('error_code'),
+                fail_reason=data.get('fail_reason'),
+                entities=data.get('entities')
+            )
+            
+            logger.info(
+                f"Job 状态: job_id={job_status.job_id}, "
+                f"type={job_status.job_type}, status={job_status.status}"
+            )
+            
+            return job_status
+            
+        except FlexusLException:
+            raise
+        except Exception as e:
+            logger.error(f"查询 Job 状态异常: {e}")
+            raise FlexusLException(f"查询 Job 状态失败: {e}")
 
 
 class FlexusLException(Exception):
-    """Flexus L 服务异常"""
     pass

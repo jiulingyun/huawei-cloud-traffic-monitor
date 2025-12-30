@@ -6,6 +6,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
+from pydantic import BaseModel
 from loguru import logger
 
 from app.core.database import get_db
@@ -16,6 +17,14 @@ from app.utils.encryption import get_encryption_service
 
 router = APIRouter(prefix="/servers", tags=["服务器管理"])
 account_service = AccountService()
+
+
+# 请求模型
+class ServerActionRequest(BaseModel):
+    """服务器操作请求"""
+    server_id: str  # 云主机 ID
+    region: str  # 区域 ID
+    action_type: str = "SOFT"  # 操作类型: SOFT/HARD
 
 
 # 区域名称映射
@@ -320,3 +329,328 @@ async def sync_servers(
 ):
     """同步指定账户的 Flexus L 实例信息"""
     return await list_servers_by_account(account_id=account_id, db=db)
+
+
+@router.get("/{account_id}/server/{server_id}/status")
+async def get_server_real_status(
+    account_id: int,
+    server_id: str,
+    region: str = Query(..., description="区域 ID，如 ap-southeast-2"),
+    db: Session = Depends(get_db)
+):
+    """
+    查询云主机实时状态
+    
+    通过 ECS API 获取云主机的实时运行状态，而不是 Config 服务的缓存状态
+    
+    - **account_id**: 账户 ID
+    - **server_id**: 云主机 ID (FlexusLInstance.server_id)
+    - **region**: 区域 ID，如 ap-southeast-2
+    
+    返回的 status 可能值:
+    - ACTIVE: 运行中
+    - SHUTOFF: 已关机
+    - REBOOT: 重启中
+    - HARD_REBOOT: 强制重启中
+    - PAUSED: 暂停
+    - SUSPENDED: 挂起
+    - ERROR: 错误
+    """
+    logger.info(f"查询云主机实时状态: account_id={account_id}, server_id={server_id}, region={region}")
+    
+    # 获取账户信息
+    account = account_service.get_account(db=db, account_id=account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="账户不存在")
+    
+    try:
+        # 解密 AK/SK
+        encryption_service = get_encryption_service()
+        ak = encryption_service.decrypt(account.ak)
+        sk = encryption_service.decrypt(account.sk)
+        is_intl = getattr(account, 'is_international', True)
+        
+        # 创建 FlexusL 服务
+        service = FlexusLService(
+            ak=ak,
+            sk=sk,
+            region=account.region,
+            is_international=is_intl
+        )
+        
+        # 查询云主机实时状态
+        server_status = service.get_server_status(server_id=server_id, region=region)
+        
+        return success_response(
+            data=server_status,
+            message=f"云主机状态: {server_status.get('status')}"
+        )
+        
+    except FlexusLException as e:
+        logger.error(f"查询云主机状态失败: {e}")
+        return success_response(
+            data=None,
+            message=f"查询失败: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"查询云主机状态异常: {e}")
+        return success_response(
+            data=None,
+            message=f"查询失败: {str(e)}"
+        )
+
+
+@router.get("/{account_id}/jobs/{job_id}")
+async def get_job_status(
+    account_id: int,
+    job_id: str,
+    region: str = Query(..., description="区域 ID，如 ap-southeast-2"),
+    db: Session = Depends(get_db)
+):
+    """
+    查询任务执行状态
+    
+    用于查询异步请求任务的执行状态，如关机、开机、重启等操作的执行结果
+    
+    - **account_id**: 账户 ID
+    - **job_id**: 任务 ID（由异步操作返回）
+    - **region**: 区域 ID，如 ap-southeast-2
+    
+    返回的 status 可能值:
+    - SUCCESS: 成功
+    - FAIL: 失败
+    - RUNNING: 运行中
+    - INIT: 初始化
+    """
+    logger.info(f"查询 Job 状态: account_id={account_id}, job_id={job_id}, region={region}")
+    
+    # 获取账户信息
+    account = account_service.get_account(db=db, account_id=account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="账户不存在")
+    
+    try:
+        # 解密 AK/SK
+        encryption_service = get_encryption_service()
+        ak = encryption_service.decrypt(account.ak)
+        sk = encryption_service.decrypt(account.sk)
+        is_intl = getattr(account, 'is_international', True)
+        
+        # 创建 FlexusL 服务
+        service = FlexusLService(
+            ak=ak,
+            sk=sk,
+            region=account.region,
+            is_international=is_intl
+        )
+        
+        # 查询 Job 状态
+        job_status = service.get_job_status(job_id=job_id, region=region)
+        
+        return success_response(
+            data=job_status.to_dict(),
+            message=f"任务状态: {job_status.status}"
+        )
+        
+    except FlexusLException as e:
+        logger.error(f"查询 Job 状态失败: {e}")
+        return success_response(
+            data=None,
+            message=f"查询失败: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"查询 Job 状态异常: {e}")
+        return success_response(
+            data=None,
+            message=f"查询失败: {str(e)}"
+        )
+
+
+@router.post("/{account_id}/server/start")
+async def start_server(
+    account_id: int,
+    request: ServerActionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    启动云主机
+    
+    - **account_id**: 账户 ID
+    - **server_id**: 云主机 ID
+    - **region**: 区域 ID
+    
+    返回 job_id 用于查询任务状态
+    """
+    logger.info(f"启动云主机: account_id={account_id}, server_id={request.server_id}, region={request.region}")
+    
+    account = account_service.get_account(db=db, account_id=account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="账户不存在")
+    
+    try:
+        encryption_service = get_encryption_service()
+        ak = encryption_service.decrypt(account.ak)
+        sk = encryption_service.decrypt(account.sk)
+        is_intl = getattr(account, 'is_international', True)
+        
+        service = FlexusLService(
+            ak=ak,
+            sk=sk,
+            region=account.region,
+            is_international=is_intl
+        )
+        
+        result = service.start_server(server_id=request.server_id, region=request.region)
+        
+        if result.success:
+            return success_response(
+                data={
+                    'job_id': result.job_id,
+                    'server_id': request.server_id,
+                    'region': request.region,
+                    'action': 'start'
+                },
+                message="启动请求已提交"
+            )
+        else:
+            return success_response(
+                data=None,
+                message=f"启动失败: {result.message}"
+            )
+        
+    except FlexusLException as e:
+        logger.error(f"启动云主机失败: {e}")
+        return success_response(data=None, message=f"启动失败: {str(e)}")
+    except Exception as e:
+        logger.error(f"启动云主机异常: {e}")
+        return success_response(data=None, message=f"启动失败: {str(e)}")
+
+
+@router.post("/{account_id}/server/stop")
+async def stop_server(
+    account_id: int,
+    request: ServerActionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    关闭云主机
+    
+    - **account_id**: 账户 ID
+    - **server_id**: 云主机 ID
+    - **region**: 区域 ID
+    - **action_type**: SOFT(正常关机) 或 HARD(强制关机)
+    
+    返回 job_id 用于查询任务状态
+    """
+    logger.info(f"关闭云主机: account_id={account_id}, server_id={request.server_id}, region={request.region}, type={request.action_type}")
+    
+    account = account_service.get_account(db=db, account_id=account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="账户不存在")
+    
+    try:
+        encryption_service = get_encryption_service()
+        ak = encryption_service.decrypt(account.ak)
+        sk = encryption_service.decrypt(account.sk)
+        is_intl = getattr(account, 'is_international', True)
+        
+        service = FlexusLService(
+            ak=ak,
+            sk=sk,
+            region=account.region,
+            is_international=is_intl
+        )
+        
+        result = service.stop_server(
+            server_id=request.server_id,
+            region=request.region,
+            stop_type=request.action_type
+        )
+        
+        if result.success:
+            return success_response(
+                data={
+                    'job_id': result.job_id,
+                    'server_id': request.server_id,
+                    'region': request.region,
+                    'action': 'stop'
+                },
+                message="关机请求已提交"
+            )
+        else:
+            return success_response(
+                data=None,
+                message=f"关机失败: {result.message}"
+            )
+        
+    except FlexusLException as e:
+        logger.error(f"关闭云主机失败: {e}")
+        return success_response(data=None, message=f"关机失败: {str(e)}")
+    except Exception as e:
+        logger.error(f"关闭云主机异常: {e}")
+        return success_response(data=None, message=f"关机失败: {str(e)}")
+
+
+@router.post("/{account_id}/server/reboot")
+async def reboot_server(
+    account_id: int,
+    request: ServerActionRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    重启云主机
+    
+    - **account_id**: 账户 ID
+    - **server_id**: 云主机 ID
+    - **region**: 区域 ID
+    - **action_type**: SOFT(正常重启) 或 HARD(强制重启)
+    
+    返回 job_id 用于查询任务状态
+    """
+    logger.info(f"重启云主机: account_id={account_id}, server_id={request.server_id}, region={request.region}, type={request.action_type}")
+    
+    account = account_service.get_account(db=db, account_id=account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="账户不存在")
+    
+    try:
+        encryption_service = get_encryption_service()
+        ak = encryption_service.decrypt(account.ak)
+        sk = encryption_service.decrypt(account.sk)
+        is_intl = getattr(account, 'is_international', True)
+        
+        service = FlexusLService(
+            ak=ak,
+            sk=sk,
+            region=account.region,
+            is_international=is_intl
+        )
+        
+        result = service.reboot_server(
+            server_id=request.server_id,
+            region=request.region,
+            reboot_type=request.action_type
+        )
+        
+        if result.success:
+            return success_response(
+                data={
+                    'job_id': result.job_id,
+                    'server_id': request.server_id,
+                    'region': request.region,
+                    'action': 'reboot'
+                },
+                message="重启请求已提交"
+            )
+        else:
+            return success_response(
+                data=None,
+                message=f"重启失败: {result.message}"
+            )
+        
+    except FlexusLException as e:
+        logger.error(f"重启云主机失败: {e}")
+        return success_response(data=None, message=f"重启失败: {str(e)}")
+    except Exception as e:
+        logger.error(f"重启云主机异常: {e}")
+        return success_response(data=None, message=f"重启失败: {str(e)}")

@@ -11,6 +11,8 @@ from app.services.huawei_cloud.flexusl_service import (
     FlexusLService,
     FlexusLInstance,
     TrafficPackageInfo,
+    ServerActionResult,
+    JobStatus,
     FlexusLException
 )
 
@@ -29,5 +31,7 @@ __all__ = [
     'FlexusLService',
     'FlexusLInstance',
     'TrafficPackageInfo',
+    'ServerActionResult',
+    'JobStatus',
     'FlexusLException',
 ]
