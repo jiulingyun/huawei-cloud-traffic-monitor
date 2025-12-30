@@ -3,11 +3,117 @@
 
 整合流量监控、阈值判断、自动关机、飞书通知的完整业务流程
 """
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable, TypeVar
 from datetime import datetime
 import time
+from functools import wraps
 from loguru import logger
 from sqlalchemy.orm import Session
+
+T = TypeVar('T')
+
+
+def retry_on_failure(
+    max_retries: int = 3,
+    retry_delay: float = 1.0,
+    backoff_factor: float = 2.0,
+    exceptions: tuple = (Exception,)
+):
+    """
+    重试装饰器
+    
+    Args:
+        max_retries: 最大重试次数
+        retry_delay: 初始重试延迟（秒）
+        backoff_factor: 退避因子（每次重试延迟乘以此因子）
+        exceptions: 需要重试的异常类型
+    """
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> T:
+            last_exception = None
+            delay = retry_delay
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt < max_retries:
+                        logger.warning(
+                            f"操作失败，准备重试: "
+                            f"attempt={attempt + 1}/{max_retries}, "
+                            f"delay={delay:.1f}s, error={e}"
+                        )
+                        time.sleep(delay)
+                        delay *= backoff_factor
+                    else:
+                        logger.error(
+                            f"操作失败，已达到最大重试次数: "
+                            f"max_retries={max_retries}, error={e}"
+                        )
+            
+            raise last_exception
+        return wrapper
+    return decorator
+
+
+class RetryExecutor:
+    """重试执行器"""
+    
+    @staticmethod
+    def execute_with_retry(
+        func: Callable[..., T],
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        backoff_factor: float = 2.0,
+        exceptions: tuple = (Exception,),
+        *args,
+        **kwargs
+    ) -> T:
+        """
+        带重试的执行函数
+        
+        Args:
+            func: 要执行的函数
+            max_retries: 最大重试次数
+            retry_delay: 初始重试延迟（秒）
+            backoff_factor: 退避因子
+            exceptions: 需要重试的异常类型
+            *args: 函数参数
+            **kwargs: 函数关键字参数
+            
+        Returns:
+            函数返回值
+            
+        Raises:
+            Exception: 重试失败后抛出最后一次异常
+        """
+        last_exception = None
+        delay = retry_delay
+        
+        for attempt in range(max_retries + 1):
+            try:
+                return func(*args, **kwargs)
+            except exceptions as e:
+                last_exception = e
+                if attempt < max_retries:
+                    logger.warning(
+                        f"操作失败，准备重试: "
+                        f"func={func.__name__}, "
+                        f"attempt={attempt + 1}/{max_retries}, "
+                        f"delay={delay:.1f}s, error={e}"
+                    )
+                    time.sleep(delay)
+                    delay *= backoff_factor
+                else:
+                    logger.error(
+                        f"操作失败，已达到最大重试次数: "
+                        f"func={func.__name__}, "
+                        f"max_retries={max_retries}, error={e}"
+                    )
+        
+        raise last_exception
 
 from app.services.huawei_cloud import (
     client_manager,
@@ -67,7 +173,9 @@ class MonitorWorkflowExecutor:
         region: str,
         project_id: str,
         traffic_threshold: float,
-        auto_shutdown_enabled: bool = True
+        auto_shutdown_enabled: bool = True,
+        shutdown_delay: int = 0,
+        retry_times: int = 3
     ) -> Dict[str, Any]:
         """
         执行完整的监控工作流
@@ -123,10 +231,17 @@ class MonitorWorkflowExecutor:
                 region=region
             )
             
-            # 步骤 2: 查询流量包信息
+            # 步骤 2: 查询流量包信息（带重试）
             logger.info("步骤 2: 查询流量包信息")
             traffic_service = TrafficService(client)
-            traffic_summary = traffic_service.get_traffic_summary()
+            
+            # 使用重试执行器查询流量
+            traffic_summary = RetryExecutor.execute_with_retry(
+                func=traffic_service.get_traffic_summary,
+                max_retries=retry_times,
+                retry_delay=2.0,
+                backoff_factor=2.0
+            )
             
             remaining_traffic = traffic_summary['total_remaining_gb']
             usage_percentage = (
@@ -192,12 +307,52 @@ class MonitorWorkflowExecutor:
                     f"remaining={remaining_traffic:.2f}GB < threshold={traffic_threshold:.2f}GB"
                 )
                 
+                # 关机延迟处理
+                if shutdown_delay > 0:
+                    logger.info(f"等待关机延迟: {shutdown_delay} 分钟")
+                    
+                    # 发送延迟通知
+                    if self.enable_notifications:
+                        try:
+                            self.notification_service.send_shutdown_delay_notification(
+                                account_name=account_name,
+                                delay_minutes=shutdown_delay,
+                                remaining_traffic_gb=remaining_traffic,
+                                threshold_gb=traffic_threshold,
+                                region=region
+                            )
+                        except Exception as e:
+                            logger.error(f"发送延迟通知失败: {e}")
+                    
+                    # 等待延迟时间
+                    time.sleep(shutdown_delay * 60)
+                    
+                    # 延迟后重新检查流量，避免误关机
+                    logger.info("延迟结束，重新检查流量")
+                    traffic_summary_recheck = traffic_service.get_traffic_summary()
+                    remaining_traffic_recheck = traffic_summary_recheck['total_remaining_gb']
+                    
+                    is_still_below, _ = monitor_logic.check_traffic_threshold(
+                        remaining_traffic=remaining_traffic_recheck,
+                        threshold=traffic_threshold
+                    )
+                    
+                    if not is_still_below:
+                        logger.info(
+                            f"延迟后流量恢复正常，取消关机: "
+                            f"remaining={remaining_traffic_recheck:.2f}GB >= threshold={traffic_threshold:.2f}GB"
+                        )
+                        result['shutdown_cancelled'] = True
+                        result['success'] = True
+                        return result
+                
                 shutdown_result = self._execute_shutdown_workflow(
                     db=db,
                     client=client,
                     project_id=project_id,
                     account_name=account_name,
-                    region=region
+                    region=region,
+                    retry_times=retry_times
                 )
                 
                 result['shutdown_executed'] = shutdown_result['success']
@@ -232,7 +387,8 @@ class MonitorWorkflowExecutor:
         client,
         project_id: str,
         account_name: str,
-        region: str
+        region: str,
+        retry_times: int = 3
     ) -> Dict[str, Any]:
         """
         执行关机工作流
@@ -243,6 +399,7 @@ class MonitorWorkflowExecutor:
             project_id: 项目 ID
             account_name: 账户名称
             region: 区域
+            retry_times: 重试次数
             
         Returns:
             关机结果
@@ -291,14 +448,20 @@ class MonitorWorkflowExecutor:
                 except Exception as e:
                     logger.error(f"发送关机通知失败: {e}")
             
-            # 3. 执行批量关机
+            # 3. 执行批量关机（带重试）
             logger.info("执行批量关机")
             shutdown_service = ShutdownService(client, project_id)
             start_time = time.time()
             
-            shutdown_task = shutdown_service.batch_stop_servers(
-                server_ids=server_ids,
-                shutdown_type=ShutdownType.SOFT
+            # 使用重试执行器执行关机操作
+            shutdown_task = RetryExecutor.execute_with_retry(
+                func=lambda: shutdown_service.batch_stop_servers(
+                    server_ids=server_ids,
+                    shutdown_type=ShutdownType.SOFT
+                ),
+                max_retries=retry_times,
+                retry_delay=5.0,
+                backoff_factor=2.0
             )
             
             result['job_id'] = shutdown_task.job_id

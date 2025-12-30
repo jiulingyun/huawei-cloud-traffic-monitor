@@ -9,7 +9,7 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.services.scheduler import monitor_scheduler
-from app.models.config import MonitorConfig
+from app.models.config import Config
 from app.models.monitor_log import MonitorLog
 from app.services.huawei_cloud import client_manager, TrafficService, ECSService
 from app.services.monitor_logic import monitor_logic

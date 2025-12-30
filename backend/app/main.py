@@ -32,9 +32,46 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     logger.info(f"启动应用: {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"API 文档: http://{settings.API_HOST}:{settings.API_PORT}/docs")
+    
+    # 初始化监控调度器和任务
+    try:
+        from app.services.scheduler import monitor_scheduler
+        from app.services.monitor_service import initialize_all_monitor_jobs
+        from app.core.database import SessionLocal
+        
+        # 启动调度器
+        logger.info("启动监控调度器")
+        monitor_scheduler.start()
+        
+        # 初始化所有监控任务
+        logger.info("初始化监控任务")
+        db = SessionLocal()
+        try:
+            stats = initialize_all_monitor_jobs(db)
+            logger.info(
+                f"监控任务初始化完成: "
+                f"success={stats['success']}, "
+                f"skipped={stats['skipped']}, "
+                f"failed={stats['failed']}"
+            )
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"初始化监控调度器失败: {e}")
+    
     yield
+    
     # 关闭时执行
     logger.info("关闭应用")
+    
+    # 关闭监控调度器
+    try:
+        from app.services.monitor_service import shutdown_all_monitor_jobs
+        shutdown_all_monitor_jobs()
+        logger.info("监控调度器已关闭")
+    except Exception as e:
+        logger.error(f"关闭监控调度器失败: {e}")
 
 
 # 创建 FastAPI 应用

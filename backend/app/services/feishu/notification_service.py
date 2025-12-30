@@ -234,6 +234,72 @@ class ShutdownSuccessTemplate(NotificationTemplate):
         }
 
 
+class ShutdownDelayTemplate(NotificationTemplate):
+    """关机延迟通知模板"""
+    
+    def render(
+        self,
+        account_name: str,
+        delay_minutes: int,
+        remaining_traffic_gb: float,
+        threshold_gb: float,
+        region: str = "",
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        渲染关机延迟通知
+        
+        Args:
+            account_name: 账户名称
+            delay_minutes: 延迟时间（分钟）
+            remaining_traffic_gb: 剩余流量（GB）
+            threshold_gb: 流量阈值（GB）
+            region: 区域
+            
+        Returns:
+            卡片配置
+        """
+        from datetime import timedelta
+        scheduled_time = datetime.now() + timedelta(minutes=delay_minutes)
+        
+        content = f"""**账户名称**: {account_name}
+**所属区域**: {region or '未知'}
+
+---
+
+**剩余流量**: {remaining_traffic_gb:.2f} GB
+**流量阈值**: {threshold_gb:.2f} GB
+**延迟时间**: {delay_minutes} 分钟
+**预计关机时间**: {scheduled_time.strftime('%Y-%m-%d %H:%M:%S')}
+
+---
+
+⏰ 流量低于阈值，系统将在 {delay_minutes} 分钟后执行自动关机
+💡 在延迟期间内流量恢复正常将自动取消关机"""
+        
+        return {
+            "config": {
+                "wide_screen_mode": True
+            },
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": "⏰ 关机延迟通知"
+                },
+                "template": "orange"
+            },
+            "elements": [
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": content
+                    }
+                }
+            ]
+        }
+
+
 class ShutdownFailureTemplate(NotificationTemplate):
     """关机失败通知模板"""
     
@@ -308,6 +374,7 @@ class FeishuNotificationService:
         self.templates = {
             'traffic_warning': TrafficWarningTemplate(),
             'shutdown_notification': ShutdownNotificationTemplate(),
+            'shutdown_delay': ShutdownDelayTemplate(),
             'shutdown_success': ShutdownSuccessTemplate(),
             'shutdown_failure': ShutdownFailureTemplate(),
         }
@@ -432,6 +499,36 @@ class FeishuNotificationService:
             account_name=account_name,
             server_count=server_count,
             job_id=job_id,
+            **kwargs
+        )
+    
+    def send_shutdown_delay_notification(
+        self,
+        account_name: str,
+        delay_minutes: int,
+        remaining_traffic_gb: float,
+        threshold_gb: float,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        发送关机延迟通知
+        
+        Args:
+            account_name: 账户名称
+            delay_minutes: 延迟时间（分钟）
+            remaining_traffic_gb: 剩余流量（GB）
+            threshold_gb: 流量阈值（GB）
+            **kwargs: 其他参数
+            
+        Returns:
+            发送结果
+        """
+        return self.send_notification(
+            'shutdown_delay',
+            account_name=account_name,
+            delay_minutes=delay_minutes,
+            remaining_traffic_gb=remaining_traffic_gb,
+            threshold_gb=threshold_gb,
             **kwargs
         )
     
