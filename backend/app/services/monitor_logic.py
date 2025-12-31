@@ -114,6 +114,19 @@ class MonitorLogic:
         """
         try:
             from app.models.monitor_log import MonitorLog
+
+            # 如果存在错误信息，尽量将详细错误附加到 message 中，便于前端查看
+            final_message = check_result or ""
+            if error_message:
+                # 限制长度，避免字段溢出（message 字段长度 500）
+                em = str(error_message)
+                if len(em) > 400:
+                    em = em[:400] + " ... (truncated)"
+                if final_message:
+                    final_message = f"{final_message} - {em}"
+                else:
+                    final_message = em
+
             log = MonitorLog(
                 account_id=account_id,
                 server_id=server_id or 0,  # 如果没有指定服务器，使用 0 表示账户级别监控
@@ -125,7 +138,7 @@ class MonitorLogic:
                 is_below_threshold=is_below_threshold,
                 # 统一使用 UTC 存储时间，避免本地/UTC 混用导致前端解析错误
                 check_time=datetime.utcnow(),
-                message=check_result
+                message=final_message
             )
             
             db.add(log)
