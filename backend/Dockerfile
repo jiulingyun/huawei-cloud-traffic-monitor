@@ -1,3 +1,10 @@
+FROM node:18-alpine AS frontend-build
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci --silent
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -14,8 +21,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc build-essen
 # Copy application code
 COPY backend/ /app
 
+# Copy built frontend static assets into backend static directory
+COPY --from=frontend-build /frontend/dist /app/static
+
 # Ensure data/log directories exist
-RUN mkdir -p /app/data /app/logs
+RUN mkdir -p /app/data /app/logs /app/static
 
 EXPOSE 8000
 

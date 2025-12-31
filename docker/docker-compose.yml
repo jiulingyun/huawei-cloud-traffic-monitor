@@ -1,27 +1,16 @@
 services:
   backend:
     build:
-      context: .
+      context: ../
       dockerfile: backend/Dockerfile
     container_name: huawei-backend
     env_file:
       - .env
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ../data:/app/data
+      - ../logs:/app/logs
     ports:
       - "8000:8000"
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    container_name: huawei-frontend
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
     restart: unless-stopped
 
 volumes:

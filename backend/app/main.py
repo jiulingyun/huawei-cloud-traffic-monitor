@@ -2,6 +2,7 @@
 华为云服务器流量监控系统 - 主应用入口
 """
 from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -19,6 +20,7 @@ from app.core.exceptions import (
 )
 from app.core.response import success_response
 from app.api.v1 import api_router
+from fastapi.staticfiles import StaticFiles
 
 # 初始化日志
 logger = setup_logging()
@@ -132,7 +134,16 @@ app.add_exception_handler(Exception, general_exception_handler)
 # 根路径
 @app.get("/", tags=["系统"])
 async def root():
-    """根路径"""
+    """根路径 — 若前端静态文件存在则返回 index.html，否则返回健康信息"""
+    index_path = "static/index.html"
+    try:
+        # 直接判断构建产物是否存在（避免依赖未声明的 settings.APP_ENV）
+        if __import__("os").path.exists(index_path):
+            return FileResponse(index_path, media_type="text/html")
+    except Exception:
+        # 回退到 JSON 响应
+        pass
+
     return success_response(
         data={
             "name": settings.APP_NAME,
@@ -155,6 +166,8 @@ async def health_check():
 
 # 注册 API 路由
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+# 将静态文件挂载放在路由注册之后，避免拦截 API 的 POST/PUT 等非 GET 请求
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
 if __name__ == "__main__":
