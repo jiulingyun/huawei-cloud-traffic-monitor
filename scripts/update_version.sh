@@ -13,7 +13,7 @@ echo "$NEW_VERSION" > VERSION
 
 echo "Updating backend/app/__init__.py"
 export NEW_VERSION
-python - <<PY
+python3 - <<PY
 import os, re
 from pathlib import Path
 

@@ -129,3 +129,5 @@ config.local.yaml
 config.local.json
 secrets.yaml
 secrets.json
+
+./github/
