@@ -1,8 +1,95 @@
-# 华为云服务器流量监控与自动关机系统
+# Huawei Cloud Traffic Monitor（华为云服务器流量监控与自动关机）
 
-一个支持多账户的华为云服务器流量监控系统，能够实时监控服务器流量包剩余量，当流量低于用户设置的阈值时自动关机，并通过飞书发送通知。
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Docker Hub](https://img.shields.io/badge/docker-jiulingyun803%2Fhuawei--cloud--traffic--monitor-blue?logo=docker)](https://hub.docker.com/repository/docker/jiulingyun803/huawei-cloud-traffic-monitor) [![Release workflow](https://github.com/jiulingyun/huawei-cloud-traffic-monitor/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/jiulingyun/huawei-cloud-traffic-monitor/actions)
 
-## 项目简介
+一款面向运维的工具，帮助华为云 ECS 用户实时监控流量包剩余量、在阈值触发时自动关机并通过飞书发送结构化告警卡片。适用于需要集中管理多个账户和大量实例的团队，旨在降低运维成本并避免超额计费。
+
+核心功能
+- 实例级流量阈值监控（按实例执行判断）
+- 自动关机（可配置延迟与重试）
+- 飞书（Feishu）告警卡片（含实例名、公网 IP、剩余流量与阈值）
+- 单镜像部署（前端静态文件已打包进后端镜像）
+- CI/CD：通过 GitHub Actions 在 push v* 标签时构建并推送镜像到 Docker Hub
+
+## 快速预览
+
+| 页面 | 占位截图 |
+|---|---|
+| Dashboard 总览 | ![Dashboard](docs/screenshots/dashboard.png) |
+| 账户与实例管理 | ![Accounts](docs/screenshots/accounts.png) |
+| 告警与通知 | ![Alert](docs/screenshots/alert.png) |
+
+快速开始（推荐：使用 Docker Hub 镜像）
+1. 克隆仓库并进入 `docker/`：
+```bash
+git clone https://github.com/jiulingyun/huawei-cloud-traffic-monitor.git
+cd huawei-cloud-traffic-monitor/docker
+```
+2. 复制环境示例并编辑 `.env`（填写华为云凭证、飞书 webhook、加密密钥等）：
+```bash
+cp env.example .env
+# 编辑 .env
+```
+3. 拉取并启动服务：
+```bash
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml up -d
+```
+4. 打开管理页面： `http://<HOST>:8000`
+
+从源码运行（开发模式）
+- 启动后端：
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+- 启动前端（可单独运行）：
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+配置要点
+- 在系统中添加华为云 AK/SK（系统会加密存储）
+- 配置飞书 Webhook 接收告警
+- 全局/账户/实例层级配置支持覆盖与继承
+
+发布与镜像（CI/CD）
+- Docker Hub 镜像： `jiulingyun803/huawei-cloud-traffic-monitor`  
+- 自动构建：在仓库 push `v*` 标签时触发 GitHub Actions，构建并推送 `vX.Y.Z` 与 `latest` 两个标签  
+- 设置 Secrets（仓库 Settings → Secrets and variables → Actions）：
+  - `DOCKERHUB_USERNAME`
+  - `DOCKERHUB_TOKEN`
+- 本地自动化发布脚本：`./scripts/release.sh`（会递增 PATCH、更新 `VERSION`、提交并打 tag）
+
+运维命令（常用）
+- 查看日志： `docker compose -f docker/docker-compose.yml logs -f huawei-backend`
+- 手动初始化数据库（容器内）： `docker compose -f docker/docker-compose.yml exec huawei-backend python /app/init_db.py`
+- 重建镜像并启动： `docker compose -f docker/docker-compose.yml up -d --build`
+
+贡献指南
+- 欢迎提交 Issue / PR。对于大改动请提供变更说明与测试用例。
+- 代码风格：遵循项目现有命名与分层规范，添加单元测试以保障行为。
+
+目录（简要）
+```
+huawei-cloud-traffic-monitor/
+├── backend/    # FastAPI 后端
+├── frontend/   # Vue 3 前端（Vite）
+├── docker/     # Docker Compose 配置
+├── scripts/    # 版本与发布脚本
+└── docs/       # 文档与截图
+```
+
+许可证
+- MIT
+
+联系
+- 如需支持或咨询，请在仓库提交 Issue。
 
 本系统旨在帮助华为云用户：
 - 实时监控多个账户下的服务器流量使用情况
@@ -131,6 +218,35 @@ docker-compose up -d
 
 ## 开发指南
 
+## 发布与镜像（Docker Hub）
+
+我们在 Docker Hub 上维护镜像 `jiulingyun803/huawei-cloud-traffic-monitor`。你可以直接拉取预构建镜像来运行：
+
+```bash
+# 拉取 latest 镜像并运行（在仓库根的 docker/ 目录中有 docker-compose.yml）
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml up -d
+```
+
+若你本地修改并想自行构建：
+
+```bash
+docker compose -f docker/docker-compose.yml build --no-cache
+docker compose -f docker/docker-compose.yml up -d
+```
+
+GitHub Actions 已配置为在 push `v*` 标签时自动构建并推送两个标签（`vX.Y.Z` 和 `latest`）到 Docker Hub。请在仓库 Settings → Secrets and variables → Actions 中添加：
+
+- `DOCKERHUB_USERNAME`：你的 Docker Hub 用户名（例如 `jiulingyun803`）
+- `DOCKERHUB_TOKEN`：Docker Hub 的访问令牌（Personal Access Token）
+
+发布流程简要：
+
+1. 使用 `./scripts/release.sh` 自动递增补丁版本、更新 `VERSION`、提交并推送，然后创建并推送 git tag。  
+2. GitHub Actions 检测到 `v*` 标签会构建并推送镜像到 Docker Hub。  
+3. 在目标主机上运行 `docker compose -f docker/docker-compose.yml up -d` 即可拉取并启动新镜像。
+
+
 本项目使用 DevGenius 进行任务管理和开发协作。
 
 ### 开发流程
@@ -155,8 +271,3 @@ MIT License
 
 如有问题或建议，请提交 Issue。
 
----
-
-**开发状态**：🚧 开发中
-
-**当前版本**：v0.1.0-alpha
