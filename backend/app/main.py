@@ -167,7 +167,20 @@ async def health_check():
 # 注册 API 路由
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 # 将静态文件挂载放在路由注册之后，避免拦截 API 的 POST/PUT 等非 GET 请求
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# 在挂载前确保 `static` 目录存在（开发时若不存在则自动创建），避免 RuntimeError
+import os
+from pathlib import Path
+
+static_dir = Path("static")
+if not static_dir.exists():
+    try:
+        # 在开发或本地运行时，自动创建以避免挂载失败
+        static_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"静态目录不存在，已创建: {static_dir.resolve()}")
+    except Exception as _e:
+        logger.warning(f"无法创建静态目录 {static_dir}: {_e}")
+
+app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 
 if __name__ == "__main__":
