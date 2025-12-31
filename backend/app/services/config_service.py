@@ -144,7 +144,16 @@ class ConfigService:
         db.add(config)
         db.commit()
         db.refresh(config)
-        
+
+        # 配置创建后，重新调度相关的监控任务
+        try:
+            from app.services.monitor_service import reschedule_monitor_job_for_config
+            reschedule_monitor_job_for_config(db, config.id)
+        except Exception as e:
+            # 记录错误但不影响配置创建
+            import logging
+            logging.getLogger(__name__).error(f"重新调度监控任务失败: config_id={config.id}, error={e}")
+
         return config
     
     def update_config(
@@ -196,10 +205,19 @@ class ConfigService:
             config.shutdown_delay = shutdown_delay
         if retry_times is not None:
             config.retry_times = retry_times
-        
+
         db.commit()
         db.refresh(config)
-        
+
+        # 配置更新后，重新调度相关的监控任务
+        try:
+            from app.services.monitor_service import reschedule_monitor_job_for_config
+            reschedule_monitor_job_for_config(db, config_id)
+        except Exception as e:
+            # 记录错误但不影响配置更新
+            import logging
+            logging.getLogger(__name__).error(f"重新调度监控任务失败: config_id={config_id}, error={e}")
+
         return config
     
     def delete_config(self, db: Session, config_id: int) -> bool:

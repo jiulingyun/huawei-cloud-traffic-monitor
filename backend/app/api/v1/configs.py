@@ -274,12 +274,44 @@ async def update_config(
 async def delete_config(config_id: int, db: Session = Depends(get_db)):
     """
     删除配置
-    
+
     - **config_id**: 配置 ID
     """
     success = config_service.delete_config(db=db, config_id=config_id)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail="配置不存在")
-    
+
     return None
+
+
+@router.post("/reschedule/{config_id}", status_code=200)
+async def reschedule_monitor_jobs(config_id: int, db: Session = Depends(get_db)):
+    """
+    重新调度监控任务
+
+    当配置变更后，可以调用此接口手动重新调度相关的监控任务。
+
+    - **config_id**: 配置 ID
+    """
+    try:
+        from app.services.monitor_service import reschedule_monitor_job_for_config
+        reschedule_monitor_job_for_config(db, config_id)
+        return success_response(message="监控任务重新调度完成")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"重新调度监控任务失败: {str(e)}")
+
+
+@router.post("/reschedule-all", status_code=200)
+async def reschedule_all_monitor_jobs(db: Session = Depends(get_db)):
+    """
+    重新调度所有监控任务
+
+    重新调度所有账户的监控任务，通常在系统配置变更后使用。
+    """
+    try:
+        from app.services.monitor_service import reschedule_all_monitor_jobs
+        reschedule_all_monitor_jobs(db)
+        return success_response(message="所有监控任务重新调度完成")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"重新调度所有监控任务失败: {str(e)}")
