@@ -75,8 +75,7 @@ def execute_monitor_task(account_id: int):
                 traffic_threshold=config.traffic_threshold,
                 auto_shutdown_enabled=config.auto_shutdown_enabled,
                 shutdown_delay=config.shutdown_delay,
-                retry_times=config.retry_times,
-                is_international=account.is_international
+                retry_times=config.retry_times
             )
 
             if result['success']:

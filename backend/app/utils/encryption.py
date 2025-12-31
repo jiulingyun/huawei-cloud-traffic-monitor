@@ -23,12 +23,13 @@ class EncryptionService:
             key: 加密密钥，如果不提供则使用环境变量或生成新密钥
         """
         if key:
-            self.key = key.encode()
+            # 去除可能的首尾空白并编码
+            self.key = key.strip().encode()
         else:
             # 从环境变量获取或生成新密钥
             env_key = os.getenv("ENCRYPTION_KEY")
             if env_key:
-                self.key = env_key.encode()
+                self.key = env_key.strip().encode()
             else:
                 # 生成新密钥（开发环境）
                 self.key = Fernet.generate_key()
@@ -96,8 +97,10 @@ class EncryptionService:
             decrypted = self.cipher.decrypt(ciphertext.encode())
             return decrypted.decode()
         except Exception as e:
-            logger.error(f"解密失败: {e}")
-            raise ValueError(f"解密失败: {e}")
+            # 记录完整异常与堆栈，便于定位生产环境问题（不会打印密钥）
+            logger.exception("解密失败，详情见堆栈信息")
+            # 抛出包含异常类型与 repr 的错误信息，便于上层记录
+            raise ValueError(f"解密失败: {type(e).__name__}: {repr(e)}")
     
     def encrypt_ak_sk(self, ak: str, sk: str) -> tuple[str, str]:
         """
