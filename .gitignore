@@ -131,3 +131,4 @@ secrets.yaml
 secrets.json
 
 ./github/
+.trae/
