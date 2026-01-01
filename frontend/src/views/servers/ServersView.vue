@@ -48,6 +48,28 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="剩余流量" min-width="220">
+          <template #default="scope">
+            <el-skeleton v-if="isTrafficRowLoading(scope.row)" :rows="1" animated style="width: 180px" />
+            <template v-else>
+              <template v-if="getTrafficRow(scope.row)?.hasPackage">
+                <el-tooltip
+                  :content="`剩余 ${getTrafficRow(scope.row).remainingAmount.toFixed(2)} ${getTrafficRow(scope.row).unit} / 总 ${getTrafficRow(scope.row).totalAmount} ${getTrafficRow(scope.row).unit}`"
+                  placement="top"
+                >
+                  <el-progress
+                    :percentage="getTrafficRow(scope.row).remainingPercentage"
+                    :color="getRemainingProgressColor(getTrafficRow(scope.row).remainingPercentage)"
+                    :stroke-width="16"
+                  />
+                </el-tooltip>
+              </template>
+              <template v-else>
+                <el-tag type="info" size="small">无流量包</el-tag>
+              </template>
+            </template>
+          </template>
+        </el-table-column>
         <el-table-column label="公网 IP" width="150">
           <template #default="scope">
             <span v-if="scope.row.public_ip">{{ scope.row.public_ip }}</span>
@@ -213,6 +235,8 @@ const actionLoading = ref({})  // 每个服务器的操作加载标记
 const selectedAccountId = ref(null)
 const accounts = ref([])
 const servers = ref([])
+const trafficRowLoading = ref({}) // 每个服务器的行内流量加载标记
+const trafficRow = ref({})        // 每个服务器的行内流量摘要数据
 
 // 任务轮询相关
 const pollingJobs = ref({})  // { jobId: { accountId, serverId, region, timer } }
@@ -298,22 +322,21 @@ const loadServers = async () => {
   
   // 列表加载完成后，异步加载每个服务器的实时状态
   loadServerStatuses()
+  // 异步加载每个实例的行内流量摘要
+  loadInstanceTraffics()
 }
 
-// 加载所有服务器的实时状态（不阻塞）
+// 加载所有服务器的实时状态（顺序挨个加载）
 const loadServerStatuses = async () => {
   const serversWithId = servers.value.filter(s => s.server_id)
   
   if (serversWithId.length === 0) return
   
-  // 并发查询所有云主机状态
-  serversWithId.forEach(async (server) => {
+  for (const server of serversWithId) {
     const key = `${server.account_id}-${server.server_id}`
     statusLoading.value[key] = true
-    
     try {
       const statusData = await getServerStatus(server.account_id, server.server_id, server.region)
-      
       if (statusData) {
         server.ecs_status = statusData.status
         server.vm_state = statusData['OS-EXT-STS:vm_state']
@@ -325,7 +348,8 @@ const loadServerStatuses = async () => {
     } finally {
       statusLoading.value[key] = false
     }
-  })
+    await new Promise(resolve => setTimeout(resolve, 120))
+  }
 }
 
 // 刷新单个服务器状态
@@ -365,6 +389,51 @@ const handleViewTraffic = async (server) => {
     ElMessage.error('查询流量失败')
   } finally {
     trafficLoading.value = false
+  }
+}
+
+// 行内流量：判断是否正在加载
+const isTrafficRowLoading = (server) => {
+  const key = `${server.account_id}-${server.id}`
+  return trafficRowLoading.value[key] === true
+}
+
+// 行内流量：获取摘要
+const getTrafficRow = (server) => {
+  const key = `${server.account_id}-${server.id}`
+  return trafficRow.value[key]
+}
+
+// 异步挨个加载实例流量摘要
+const loadInstanceTraffics = async () => {
+  const serversWithInstanceId = servers.value.filter(s => s.id)
+  if (serversWithInstanceId.length === 0) return
+  for (const server of serversWithInstanceId) {
+    const key = `${server.account_id}-${server.id}`
+    trafficRowLoading.value[key] = true
+    try {
+      const data = await getInstanceTraffic(server.account_id, server.id)
+      if (data && data.has_traffic_package && data.traffic) {
+        const usage = data.traffic.usage_percentage
+        const remainingPercentage = Math.max(0, Math.min(100, 100 - usage))
+        trafficRow.value[key] = {
+          hasPackage: true,
+          remainingPercentage,
+          totalAmount: data.traffic.total_amount,
+          usedAmount: data.traffic.used_amount,
+          remainingAmount: data.traffic.remaining_amount,
+          unit: data.traffic.measure_unit
+        }
+      } else {
+        trafficRow.value[key] = { hasPackage: false }
+      }
+    } catch (error) {
+      console.warn(`获取实例 ${server.name} 流量失败:`, error)
+      trafficRow.value[key] = { hasPackage: false }
+    } finally {
+      trafficRowLoading.value[key] = false
+    }
+    await new Promise(resolve => setTimeout(resolve, 120))
   }
 }
 
@@ -568,6 +637,13 @@ const stopAllPolling = () => {
 const getProgressColor = (percentage) => {
   if (percentage >= 90) return '#F56C6C'
   if (percentage >= 70) return '#E6A23C'
+  return '#67C23A'
+}
+
+// 剩余进度条颜色（剩余越低颜色越危险）
+const getRemainingProgressColor = (remainingPercentage) => {
+  if (remainingPercentage <= 10) return '#F56C6C'
+  if (remainingPercentage <= 30) return '#E6A23C'
   return '#67C23A'
 }
 
